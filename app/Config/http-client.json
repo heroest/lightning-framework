@@ -1,0 +1,6 @@
+{
+    "http_client": {
+        "timeout": 12.5,
+        "ignore_content_on_codes": [301, 302, 304, 400, 403, 404, 500, 502, 503]
+    }
+}

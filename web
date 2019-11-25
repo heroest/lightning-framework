@@ -1,0 +1,28 @@
+<?php
+
+require 'vendor/autoload.php';
+define('BASE_PATH', dirname(__FILE__));
+
+set_error_handler(function($errno, $errstr) {
+    throw new ErrorException($errstr, $errno);
+});
+
+ini_set('memory_limit', -1);
+$app = new \Lightning\MVC\Application('App');
+
+$loop = \lightning\container()->get('loop');
+$loop->addPeriodicTimer(5, function() {
+    $byte = memory_get_peak_usage(true);
+    $peak = number_format(bcdiv($byte, 1024, 4), 2) . "KB";
+    $byte = memory_get_usage(true);
+    $current = number_format(bcdiv($byte, 1024, 4), 2) . "KB";
+    $byte = memory_get_usage();
+    $php_current = number_format(bcdiv($byte, 1024, 4), 2) . "KB";
+    $byte = memory_get_peak_usage(true);
+    $php_peak = number_format(bcdiv($byte, 1024, 4), 2) . "KB";
+    echo json_encode(['total_peak' => $peak, 'total_current' => $current, 'php_peak' => $php_peak, 'php_current' => $php_current]) . "\r\n";
+});
+
+$input = $_SERVER['argv'];
+$port = isset($input[1]) ? intval($input[1]) : 80;
+$app->run($port);

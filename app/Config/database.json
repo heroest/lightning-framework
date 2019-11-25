@@ -1,0 +1,83 @@
+{
+    "database": {
+        "connections": {
+            "home-db": [
+                {
+                    "host": "localhost",
+                    "username": "root",
+                    "password": "123456a.",
+                    "port": 3306,
+                    "dbname": "lightning",
+                    "role": "master",
+                    "num_connection": 5,
+                    "max_num_connection": 20
+                },
+                {
+                    "host": "localhost",
+                    "username": "root",
+                    "password": "123456a.",
+                    "port": 3306,
+                    "dbname": "lightning",
+                    "role": "slave",
+                    "num_connection": 5,
+                    "max_num_connection": 20
+                },
+                {
+                    "host": "localhost",
+                    "username": "root",
+                    "password": "123456a.",
+                    "port": 3306,
+                    "dbname": "lightning",
+                    "role": "slave",
+                    "num_connection": 7,
+                    "max_num_connection": 20
+                }
+            ],
+            "vip-music": [
+                {
+                    "host": "18.18.100.2",
+                    "username": "viptest",
+                    "password": "viptest_2017",
+                    "port": 3306,
+                    "dbname": "music",
+                    "role": "master",
+                    "num_connection": 3,
+                    "max_num_connection": 20
+                },
+                {
+                    "host": "18.18.100.2",
+                    "username": "viptest",
+                    "password": "viptest_2017",
+                    "port": 3306,
+                    "dbname": "music",
+                    "role": "slave",
+                    "num_connection": 3,
+                    "max_num_connection": 20
+                },
+                {
+                    "host": "18.18.100.2",
+                    "username": "viptest",
+                    "password": "viptest_2017",
+                    "port": 3306,
+                    "dbname": "music",
+                    "role": "slave",
+                    "num_connection": 2,
+                    "max_num_connection": 20
+                }
+            ],
+            "vip-ext": [
+                {
+                    "host": "18.18.100.2",
+                    "username": "viptest",
+                    "password": "viptest_2017",
+                    "port": 3306,
+                    "dbname": "message_center",
+                    "role": "master",
+                    "num_connection": 10,
+                    "max_num_connection": 20
+                }
+            ]
+        },
+        "waiting_list_limit": 100
+    }
+}
