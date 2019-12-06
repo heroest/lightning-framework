@@ -51,7 +51,7 @@
                     "port": 3306,
                     "dbname": "music",
                     "role": "slave",
-                    "num_connection": 3,
+                    "num_connection": 5,
                     "max_num_connection": 20
                 },
                 {
@@ -61,7 +61,7 @@
                     "port": 3306,
                     "dbname": "music",
                     "role": "slave",
-                    "num_connection": 2,
+                    "num_connection": 7,
                     "max_num_connection": 20
                 }
             ],

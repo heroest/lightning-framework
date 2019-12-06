@@ -1,12 +1,12 @@
 <?php
 namespace Lightning\MVC;
 
-use React\Promise\Deferred;
+use React\Promise\{Deferred, PromiseInterface};
 use React\Http\Response;
 use InvalidArgumentException;
 use Throwable;
 
-class ResponseBuilder
+class Output
 {
     const TYPE_TEXT = 'text';
     const TYPE_HTML = 'html';
@@ -75,10 +75,9 @@ class ResponseBuilder
         $this->sent = true;
         $headers = self::normalizeHeaders($this->headers);
         $this->deferred->resolve(new Response($this->code, $headers, $this->data));
-        // $this->deferred = null;
     }
 
-    public function promise()
+    public function promise(): PromiseInterface
     {
         return $this->deferred->promise();
     }

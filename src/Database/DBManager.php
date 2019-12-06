@@ -1,11 +1,11 @@
 <?php
 namespace Lightning\Database;
 
-use Lightning\Base\ArrayObject;
 use Lightning\System\PendingPromises;
 use Lightning\Database\{Pool, Connection, QueryResult};
 use React\Promise\{PromiseInterface, Deferred};
-use function Lightning\{getObjectId, awaitForResult, container};
+use function Lightning\getObjectId;
+use function Lightning\container;
 use Lightning\Exceptions\DatabaseException;
 use mysqli;
 
@@ -22,23 +22,21 @@ class DBManager
         $this->working = [];
     }
 
-    public function query(string $connection_name, string $sql, string $role = 'master', bool $fetch_row = false)
+    public function query(string $connection_name, string $sql, string $role = 'master', string $fetch_mode = 'fetch_all')
     {
+        if (!in_array($fetch_mode, Connection::FETCH_MODES, true)) {
+            throw new DatabaseException("Unknown Fetch Modes: {$fetch_mode}");
+        }
+
         if (self::isReadQuery($sql)) {
-            $cache_key = PendingPromises::cacheKey($connection_name, $sql, $role, $fetch_row);
+            $cache_key = PendingPromises::cacheKey($connection_name, $sql, $role, $fetch_mode);
             if ($promise = PendingPromises::get($cache_key)) {
                 return $promise;
             }
         }
-        $promise = null;
-        $mixed = $this->pool->getConnection($connection_name, $role);
-        if ($mixed instanceof PromiseInterface) {
-            $promise = $this->executeAsync($mixed, $sql, $fetch_row);
-        } elseif ($mixed instanceof Connection) {
-            $promise = $this->execute($mixed, $sql, $fetch_row);
-        } else {
-            throw new DatabaseException("Unknown return type: " . gettype($mixed));
-        }
+
+        $connection_promise = $this->pool->getConnection($connection_name, $role);
+        $promise = $this->execute($connection_promise, $sql, $fetch_mode);
 
         if (isset($cache_key)) {
             PendingPromises::set($cache_key, $promise);
@@ -46,26 +44,20 @@ class DBManager
         return $promise;
     }
 
-    private function executeAsync(PromiseInterface $connection_promise, string $sql, bool $fetch_row): PromiseInterface
+    private function execute(PromiseInterface $connection_promise, string $sql, $fetch_mode): PromiseInterface
     {
         $deferred = new Deferred();
-        $connection_promise->then(function($connection) use ($deferred, $sql, $fetch_row) {
-            $deferred->resolve($this->execute($connection, $sql, $fetch_row));
+        $connection_promise->then(function(Connection $connection) use ($deferred, $sql, $fetch_mode) {
+            $link = $connection->getLink();
+            $link_id = getObjectId($link);
+            $this->working[$link_id] = $link;
+            $this->linkConnection[$link_id] = $connection;
+
+            $promise = $connection->query($sql, $fetch_mode);
+            $this->connectionPoll();
+            $deferred->resolve($promise);
         });
-        unset($connection_promise);
         return $deferred->promise();
-    }
-
-    private function execute(Connection $connection, string $sql, bool $fetch_row): PromiseInterface
-    {
-        $link = $connection->getLink();
-        $link_id = getObjectId($link);
-        $this->working[$link_id] = $link;
-        $this->linkConnection[$link_id] = $connection;
-
-        $promise = $connection->query($sql, $fetch_row);
-        $this->connectionPoll();
-        return $promise;
     }
 
     private function connectionPoll()
@@ -95,24 +87,13 @@ class DBManager
                         $this->linkConnection[$link_id]
                     );
                     if ($result = $link->reap_async_query()) {
-                        $connection->resolve(self::fetchQueryResult($result, $link));
+                        $connection->resolve($result);
                     } else {
                         $connection->reject(new DatabaseException($link->error, $link->errno));
                     }
                 }
             });
         }
-    }
-
-    private static function fetchQueryResult($result, \mysqli $link)
-    {
-        if (is_object($result)) {
-            $data = new QueryResult($result->fetch_all(MYSQLI_ASSOC));
-            mysqli_free_result($result);
-        } else {
-            $data = new QueryResult(null, $link->insert_id, $link->affected_rows);
-        }
-        return $data;
     }
 
     //from Yii

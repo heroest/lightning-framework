@@ -3,7 +3,7 @@ namespace Lightning\MVC;
 
 use function Lightning\container;
 use function React\Promise\race;
-use Lightning\MVC\ResponseBuilder;
+use Lightning\MVC\Output;
 use React\Promise\{Deferred, PromiseInterface};
 use React\Http\{Server, Response};
 use React\Socket\Server as SocketServer;
@@ -27,6 +27,7 @@ class Application extends \Lightning\Base\Application
         $loop = container()->get('loop');
         $server = new Server([$this, 'handleRequest']);
         $server->listen(new SocketServer($port, $loop));
+        echo "sever listening on port: {$port}\r\n";
         $loop->run();
     }
 
@@ -34,10 +35,9 @@ class Application extends \Lightning\Base\Application
     {
         try {
             $callable = $this->fetchUrl($request->getUri()->getPath());
-            $builder = new ResponseBuilder();
-            call_user_func_array($callable, [$request, $builder]);
-            $promise = $builder->promise();
-            return self::timeout($promise);
+            $output = new Output();
+            call_user_func_array($callable, [$request, $output]);
+            return self::timeout($output->promise());
         } catch (Throwable $e) {
             $code = $e->getCode();
             return new Response(
@@ -45,7 +45,7 @@ class Application extends \Lightning\Base\Application
                 ['Content-Type' => 'application/json'], 
                 json_encode([
                     'msg' => $e->getMessage(), 
-                    'file' => $e->file(), 
+                    'file' => $e->getFile(), 
                     'line' => $e->getLine()
                 ], JSON_UNESCAPED_UNICODE)
             );

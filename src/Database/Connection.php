@@ -1,11 +1,13 @@
 <?php
+
 namespace Lightning\Database;
 
 use mysqli;
+use mysqli_result;
 use Throwable;
 use RuntimeException;
 use Lightning\Database\QueryResult;
-use function Lightning\{getObjectId, container};
+use function LIghtning\container;
 use React\Promise\{Deferred, PromiseInterface};
 
 class Connection
@@ -17,6 +19,7 @@ class Connection
 
     const ACTION_STATE_CHANGED = 'state_changed';
 
+    const FETCH_MODES = ['fetch_all', 'fetch_row'];
 
     private $eventManager;
     private $connectionName;
@@ -27,7 +30,7 @@ class Connection
     private $state = self::STATE_CLOSE;
     private $stateTimeStart = 0;
     private $deferred;
-    private $fetchRow;
+    private $fetchMode;
 
     public function __construct(string $connection_name, array $options)
     {
@@ -53,13 +56,13 @@ class Connection
         return floatval(bcsub(microtime(true), $this->stateTimeStart, 4));
     }
 
-    public function query(string $sql, bool $fetch_row = false): PromiseInterface
+    public function query(string $sql, string $fetch_mode): PromiseInterface
     {
         if ($this->state !== self::STATE_IDLE) {
             throw new RuntimeException('Connection is not ready for query yet');
         }
 
-        $this->fetchRow = $fetch_row;
+        $this->fetchMode = $fetch_mode;
         $this->updateProfile('time_query', time());
         $this->deferred = new Deferred();
         $this->state = self::STATE_WORKING;
@@ -67,18 +70,15 @@ class Connection
         return $this->deferred->promise();
     }
 
-    public function resolve(QueryResult $query_result)
+    public function resolve($result)
     {
+        $query_result = $this->fetchQueryResult($result);
         if ($this->deferred !== null) {
-            if ($this->fetchRow) {
-                $query_result->data = current($query_result->result);
-            }
             $this->deferred->resolve($query_result);
             $this->deferred = null;
-            $this->fetchRow = false;
-            $this->state = self::STATE_IDLE;
-            $this->notifyStateChange(self::STATE_IDLE);
+            $this->fetchMode = '';
         }
+        $this->changeState(self::STATE_IDLE);
     }
 
     public function reject(Throwable $error)
@@ -86,25 +86,23 @@ class Connection
         if ($this->deferred !== null) {
             $this->deferred->reject($error);
             $this->deferred = null;
-            $this->fetchRow = false;
-            $this->state = self::STATE_IDLE;
-            $this->notifyStateChange(self::STATE_IDLE);    
+            $this->fetchMode = false;
         }
+        $this->changeState(self::STATE_IDLE);
     }
 
     public static function eventName(string $action, $state): string
     {
-        return implode('.', ['connection', $action, $state]);
+        $class_name = str_replace("\\", "_", self::class);
+        return implode('.', [$class_name, $action, $state]);
     }
 
     public function open(): bool
     {
-        if ($this->link !== null) {
-            $this->link->close();
-            $this->link = null;
+        if ($this->state !== self::STATE_CLOSE) {
+            return false;
         }
 
-        $this->state = self::STATE_IDLE;
         $this->updateProfile('time_opened', time());
         $config = $this->credential;
         try {
@@ -114,9 +112,10 @@ class Connection
                 $config['password'],
                 $config['dbname']
             );
-            $this->notifyStateChange(self::STATE_IDLE);
+            $this->changeState(self::STATE_IDLE);
             return true;
         } catch (Throwable $e) {
+            //do log stuff
             return false;
         }
     }
@@ -127,8 +126,7 @@ class Connection
             $this->link->close();
             $this->link = null;
         }
-
-        $this->state = self::STATE_CLOSE;
+        $this->changeState(self::STATE_CLOSE);
     }
 
     public function ping(): bool
@@ -145,8 +143,21 @@ class Connection
         return isset($this->profile[$field]) ? $this->profile[$field] : null;
     }
 
-    private function notifyStateChange($state)
+    private function fetchQueryResult($result): QueryResult
     {
+        if ($result instanceof mysqli_result) {
+            $fetch_mode = ($this->fetchMode == 'fetch_row') ? 'fetch_assoc' : $this->fetchMode;
+            $data = call_user_func([$result, $fetch_mode]);
+            $result->close();
+            return new QueryResult($data);
+        } else {
+            return new QueryResult(null, $this->link->insert_id, $this->link->affected_rows);
+        }
+    }
+
+    private function changeState($state)
+    {
+        $this->state = $state;
         $this->stateTimeStart = microtime(true);
         $this->eventManager->emit(
             self::eventName(self::ACTION_STATE_CHANGED, $state),

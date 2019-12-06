@@ -8,7 +8,8 @@
         "symfony/options-resolver": "^4",
         "symfony/event-dispatcher": "^4",
         "react/http-client": "^0.5.9",
-        "react/http": "^0.8.5"
+        "react/http": "^0.8.5",
+        "psr/http-message": "^1.0"
     },
     "license": "MIT",
     "authors": [

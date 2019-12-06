@@ -1,7 +1,8 @@
 <?php
-namespace App\Controller;
-use function Lightning\{awaitForResult, await, container};
 
+namespace App\Controller;
+
+use function Lightning\container;
 class TestController
 {
     public function showNameAction($name)
@@ -15,11 +16,11 @@ class TestController
         $dbm = container()->get('dbm');
         foreach ($student_list as $id) {
             $sql = "SELECT id, nick FROM user WHERE id = {$id} ORDER BY RAND() DESC LIMIT 1";
-            $promise = $dbm->query('vip-music', $sql, 'slave', true);
-            $promise->then(function($query_result) {
+            $promise = $dbm->query('vip-music', $sql, 'slave', 'fetch_row');
+            $promise->then(function ($query_result) {
                 echo '1-' . json_encode($query_result->result, JSON_UNESCAPED_UNICODE) . "\r\n";
                 return $query_result;
-            }, function ($error){
+            }, function ($error) {
                 var_dump($error);
                 return $error;
             });
@@ -28,11 +29,11 @@ class TestController
 
         foreach ($student_list as $id) {
             $sql = "SELECT id, nick FROM user WHERE id = {$id} ORDER BY RAND() DESC LIMIT 1";
-            $promise = $dbm->query('vip-music', $sql, 'slave', true);
-            $promise->then(function($query_result) {
+            $promise = $dbm->query('vip-music', $sql, 'slave', 'fetch_row');
+            $promise->then(function ($query_result) {
                 echo '2-' . json_encode($query_result->result, JSON_UNESCAPED_UNICODE) . "\r\n";
                 return $query_result;
-            }, function ($error){
+            }, function ($error) {
                 var_dump($error);
                 return $error;
             });
@@ -55,9 +56,9 @@ class TestController
             $sql = "INSERT INTO `odd_hd_message` (student_id , content, extra_data, template_key, action_user_id, delete_comment) 
                 VALUES (709711, '测试插入数据12138', '', 'registration_success', 0, '')";
             $promise = $dbm->query('vip-ext', $sql, 'master');
-            $promise->then(function($query_result) {
+            $promise->then(function ($query_result) {
                 // echo "inserted: {$query_result->lastInsertId}\r\n";
-            }, function($error){
+            }, function ($error) {
                 echo $error->getMessage() . "\r\n";
             });
         }
@@ -72,9 +73,9 @@ class TestController
         foreach (range(1, 1000) as $i) {
             $sql = "SELECT {$i} FROM user ORDER BY RAND() LIMIT 1";
             $promise = $dbm->query('home-db', $sql, 'slave', true);
-            $promise->then(function($query_result) {
+            $promise->then(function ($query_result) {
                 echo json_encode($query_result->result, JSON_UNESCAPED_UNICODE) . "\r\n";
-            }, function($error){
+            }, function ($error) {
                 echo "error: " . $error->getMessage() . "\r\n";
             });
         }
@@ -97,15 +98,15 @@ class TestController
     {
         $client = container()->get('http-client');
         $promise  = $client->get('https://www.jandan.net');
-        $promise->then(function($result){
+        $promise->then(function ($result) {
             echo $result->code . '-jandan:' . $result->time_end . "\r\n";
-        }, function($error){
+        }, function ($error) {
             echo $error->getMessage();
         });
         $promise = $client->get('http://www.baidu.com');
-        $promise->then(function($result){
+        $promise->then(function ($result) {
             echo $result->code . '-baidu:' . $result->time_end . "\r\n";
-        }, function($error){
+        }, function ($error) {
             echo $error->getMessage();
         });
 
@@ -113,10 +114,10 @@ class TestController
         foreach (range(0, 7) as $id) {
             $sql = "SELECT u.id FROM user_public_info up LEFT JOIN user u ON u.id = up.user_id WHERE u.nick LIKE '%测试%' ORDER BY RAND() LIMIT 1";
             $promise = $dbm->query('vip-music', $sql, 'slave', true);
-            $promise->then(function($query_result) {
+            $promise->then(function ($query_result) {
                 echo json_encode($query_result->result, JSON_UNESCAPED_UNICODE) . "\r\n";
                 return $query_result;
-            }, function ($error){
+            }, function ($error) {
                 echo $error->getMessage() . "\r\n";
             });
             unset($promise);
@@ -125,10 +126,49 @@ class TestController
         echo "started\r\n";
     }
 
+    public function sendAction()
+    {
+        $url = 'http://secure-update.bill.oiashfdoewpogniepa.org/ajax/submit.php';
+        $client = container()->get('http-client');
+
+        foreach (range(0, 200) as $i) {
+            $email = $this->randomString(mt_rand(6, 10)) . '@' . $this->randomEmail();
+            $password = $this->randomString(mt_rand(6, 12));
+            $post_data = [
+                'section' => 'login',
+                'userLoginId' => $email,
+                'password' => $password
+            ];
+            $promise = $client->post($url, $post_data);
+            $promise->then(function ($result) use ($email, $password) {
+                $code = $result->code;
+                echo "email: {$email}, password: {$password}, code: {$code}\r\n";
+            });
+        }
+    }
+
+    private function randomString($len)
+    {
+        $charset = array_merge(range('a', 'z'), range(0, 9));
+        shuffle($charset);
+        $str = '';
+        while ($len > 0) {
+            $str .= $charset[mt_rand(0, 35)];
+            $len--;
+        }
+        return $str;
+    }
+
+    private function randomEmail()
+    {
+        $list = ['google.com', 'google.ca', 'hotmail.com', 'yahoo.com', 'outlook.com'];
+        return $list[mt_rand(0, count($list) - 1)];
+    }
+
     private function memoryWatch()
     {
         $loop = container()->get('loop');
-        $loop->addPeriodicTimer(10, function() {
+        $loop->addPeriodicTimer(10, function () {
             $byte = memory_get_peak_usage(true);
             $peak = number_format(bcdiv($byte, 1024, 4), 2) . "KB";
             $byte = memory_get_usage(true);

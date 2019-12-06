@@ -29,8 +29,8 @@ function await(\React\Promise\PromiseInterface $promise, \Lightning\Base\Awaitab
 /**
  * Block-wait for promise to resolve or rejct and return promise value or throw rejection
  *
- * @param PromiseInterface $promise
- * @param StreamSelectLoop $loop
+ * @param \React\Promise\PromiseInterface $promise
+ * @param \Lightning\Base\AwaitableLoopInterface $loop
  * @return mixed
  * @throws Throwable
  */

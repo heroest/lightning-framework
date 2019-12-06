@@ -1,9 +1,9 @@
 <?php 
 namespace Lightning\Database;
 
-use Lightning\Base\{ArrayObject};
-use Lightning\Database\{Connection, QueryResult};
-use function Lightning\{getObjectId, container, await};
+use Lightning\Database\Connection;
+use function Lightning\container;
+use function Lightning\await;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 use React\Promise\{Deferred, PromiseInterface};
 use function React\Promise\resolve;
@@ -30,7 +30,7 @@ class Pool
         $this->bootstrap();
     }
 
-    public function getConnection(string $connection_name, string $role)
+    public function getConnection(string $connection_name, string $role): PromiseInterface
     {
         $role = strtolower($role);
         if (!in_array($role, ['master', 'slave'])) {
@@ -42,7 +42,7 @@ class Pool
         }
 
         if ($connection = $this->doGetConnection($connection_name, $role)) {
-            return $connection;
+            return resolve($connection);
         } else {
             $config = container()->get('config');
             $max_limit = $config->get('database.waiting_list_limit', 200);

@@ -12,8 +12,8 @@ abstract class Application
     {
         $container = \Lightning\container();
         $container->set('app', $this, true);
-        $container->set('loop', \Lightning\System\StreamSelectLoop::CLASS, true);
-        $container->set('event-manager', \Lightning\Event\EventManager::CLASS, true);
+        $container->set('loop', \Lightning\System\LoopFactory::buildLoop(), true);
+        $container->set('event-manager', \Lightning\Event\EventManager::class, true);
         
         $container->set('config', function() {
             $config = new \Lightning\System\Config();
@@ -24,7 +24,7 @@ abstract class Application
             $pool = new \Lightning\Database\Pool();
             return new \Lightning\Database\DBManager($pool);
         });
-        $container->set('http-client', \Lightning\Http\HttpClient::CLASS);
+        $container->set('http-client', \Lightning\Http\HttpClient::class);
     }
 
     abstract public function run();

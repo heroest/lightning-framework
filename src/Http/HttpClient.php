@@ -54,7 +54,7 @@ class HttpClient
             'Content-Type' => 'application/x-www-form-urlencoded',
             'Content-Length' => strlen($post_field)
         ];
-        $request = $this->client->request('POST', $url, $headers);
+        $request = $this->client->request('POST', $url, array_merge($post_headers, $headers));
         $result->time_request = microtime(true);
         $request->on('response', function(Response $response) use ($request, $deferred, $result) {
             self::handleResponse($request, $response, $result, $deferred);
