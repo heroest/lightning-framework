@@ -24,6 +24,7 @@ class Connection
     private $eventManager;
     private $connectionName;
     private $role;
+    /** @var mysqli $link */
     private $link;
     private $credential = [];
     private $profile = [];
@@ -56,6 +57,11 @@ class Connection
         return floatval(bcsub(microtime(true), $this->stateTimeStart, 4));
     }
 
+    public function escape($value)
+    {
+        $this->link->real_escape_string($value);
+    }
+
     public function query(string $sql, string $fetch_mode): PromiseInterface
     {
         if ($this->state !== self::STATE_IDLE) {
@@ -73,11 +79,9 @@ class Connection
     public function resolve($result)
     {
         $query_result = $this->fetchQueryResult($result);
-        if ($this->deferred !== null) {
-            $this->deferred->resolve($query_result);
-            $this->deferred = null;
-            $this->fetchMode = '';
-        }
+        $this->deferred->resolve($query_result);
+        $this->deferred = null;
+        $this->fetchMode = '';
         $this->changeState(self::STATE_IDLE);
     }
 
@@ -146,8 +150,11 @@ class Connection
     private function fetchQueryResult($result): QueryResult
     {
         if ($result instanceof mysqli_result) {
-            $fetch_mode = ($this->fetchMode == 'fetch_row') ? 'fetch_assoc' : $this->fetchMode;
-            $data = call_user_func([$result, $fetch_mode]);
+            if ($this->fetchMode == 'fetch_row') {
+                $data = $result->fetch_assoc();
+            } elseif ($this->fetchMode == 'fetch_all') {
+                $data = $result->fetch_all(MYSQLI_ASSOC);
+            }
             $result->close();
             return new QueryResult($data);
         } else {

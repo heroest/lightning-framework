@@ -21,7 +21,7 @@ class SiteController
     public function testMkDatabaseAction(ServerRequestInterface $request, Output $output)
     {
         $dbm = container()->get('dbm');
-        $rand = mt_rand(100, 200);
+        $rand = mt_rand(1000, 9999);
         $sql = "SELECT {$rand} AS random_num, id FROM user ORDER BY RAND() LIMIT 1";
         $promise = $dbm->query('vip-music', $sql, 'slave', 'fetch_row');
         $promise->then(function($query_result) use ($output) {

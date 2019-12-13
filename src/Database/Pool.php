@@ -158,7 +158,7 @@ class Pool
                             $connection->open();
                         }
 
-                        if ($connection->getState() === Connection::STATE_IDLE) {
+                        if ($connection->getState() >= Connection::STATE_IDLE) {
                             $live_count++;
                         }
                     }

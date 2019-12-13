@@ -2,7 +2,7 @@
 namespace Lightning\Database;
 
 use Lightning\System\PendingPromises;
-use Lightning\Database\{Pool, Connection, QueryResult};
+use Lightning\Database\{Pool, Connection, Query};
 use React\Promise\{PromiseInterface, Deferred};
 use function Lightning\getObjectId;
 use function Lightning\container;
@@ -22,7 +22,14 @@ class DBManager
         $this->working = [];
     }
 
-    public function query(string $connection_name, string $sql, string $role = 'master', string $fetch_mode = 'fetch_all')
+    public function runQuery(Query $query)
+    {
+        $connection_name = $query->getConnectionName();
+        $connection_role = $query->getConnectionRole();
+        $fetch_mode = $query->getFetchMode();
+    }
+
+    public function query(string $connection_name, string $sql, string $role = 'master', string $fetch_mode = 'fetch_row')
     {
         if (!in_array($fetch_mode, Connection::FETCH_MODES, true)) {
             throw new DatabaseException("Unknown Fetch Modes: {$fetch_mode}");
