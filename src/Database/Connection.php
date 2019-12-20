@@ -38,6 +38,7 @@ class Connection
         $this->eventManager = container()->get('event-manager');
         $this->connectionName = $connection_name;
         $this->role = $options['role'];
+        unset($options['role']);
         $this->credential = $options;
         $this->updateProfile('time_created', time());
     }
@@ -62,10 +63,14 @@ class Connection
         $this->link->real_escape_string($value);
     }
 
-    public function query(string $sql, string $fetch_mode): PromiseInterface
+    public function query(string $sql, string $fetch_mode, array $params = []): PromiseInterface
     {
         if ($this->state !== self::STATE_IDLE) {
             throw new RuntimeException('Connection is not ready for query yet');
+        }
+
+        if (! empty($params)) {
+            $sql = $this->bindSql($sql, $params);
         }
 
         $this->fetchMode = $fetch_mode;
@@ -80,18 +85,14 @@ class Connection
     {
         $query_result = $this->fetchQueryResult($result);
         $this->deferred->resolve($query_result);
-        $this->deferred = null;
-        $this->fetchMode = '';
+        $this->reset();
         $this->changeState(self::STATE_IDLE);
     }
 
     public function reject(Throwable $error)
     {
-        if ($this->deferred !== null) {
-            $this->deferred->reject($error);
-            $this->deferred = null;
-            $this->fetchMode = false;
-        }
+        $this->deferred->reject($error);
+        $this->reset();
         $this->changeState(self::STATE_IDLE);
     }
 
@@ -145,6 +146,27 @@ class Connection
     public function getProfile($field)
     {
         return isset($this->profile[$field]) ? $this->profile[$field] : null;
+    }
+
+    private function reset()
+    {
+        $this->deferred = null;
+        $this->fetchMode = '';
+    }
+
+    private function bindSql(string $sql, array $params)
+    {
+        $search = [];
+        $replace = [];
+        foreach ($params as $key => $val) {
+            if (is_string($val)) {
+                $key = "'{$key}'";
+                $val = $this->link->real_escape_string($val);
+            }
+            $search[] = $key;
+            $replace[] = $val;
+        }
+        return str_replace($search, $replace, $sql);
     }
 
     private function fetchQueryResult($result): QueryResult

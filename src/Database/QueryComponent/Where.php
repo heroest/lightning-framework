@@ -51,6 +51,6 @@ class Where implements ComponentInterface
     private function key2ph()
     {
         $this->step++;
-        return "::{$this->key}_{$this->prefix}_{$this->step}::";
+        return "{{{$this->prefix}_{$this->key}_{$this->step}}}";
     }
 }

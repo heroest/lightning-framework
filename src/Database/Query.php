@@ -20,7 +20,9 @@ class Query
     private $select = ['*'];
     private $where = [];
     private $join = [];
-    private $values = []; //for-update
+    private $sets = []; //for-update
+    private $keys = [];
+    private $values = [];
 
     private function __construct(string $connection_name, string $connection_role = 'slave')
     {
