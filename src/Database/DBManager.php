@@ -22,16 +22,20 @@ class DBManager
         $this->working = [];
     }
 
-    public function runQuery(Query $query)
+    public function runQuery(Query $query): PromiseInterface
     {
-        $connection_name = $query->getConnectionName();
-        $connection_role = $query->getConnectionRole();
-        $fetch_mode = $query->getFetchMode();
+        return $this->query(
+            $query->getConnectionName(),
+            $query->getConnectionRole(),
+            $query->getSql(),
+            $query->getFetchMode(),
+            $query->getParams()
+        );
     }
 
-    public function query(string $connection_name, string $sql, string $role = 'master', string $fetch_mode = 'fetch_row')
+    public function query(string $connection_name, string $role = 'master', string $sql, string $fetch_mode = 'fetch_row', array $params = [])
     {
-        if (!in_array($fetch_mode, Connection::FETCH_MODES, true)) {
+        if (!in_array($fetch_mode, Connection::FETCH_MODES)) {
             throw new DatabaseException("Unknown Fetch Modes: {$fetch_mode}");
         }
 
@@ -43,7 +47,7 @@ class DBManager
         }
 
         $connection_promise = $this->pool->getConnection($connection_name, $role);
-        $promise = $this->execute($connection_promise, $sql, $fetch_mode);
+        $promise = $this->execute($connection_promise, $sql, $fetch_mode, $params);
 
         if (isset($cache_key)) {
             PendingPromises::set($cache_key, $promise);
@@ -51,16 +55,16 @@ class DBManager
         return $promise;
     }
 
-    private function execute(PromiseInterface $connection_promise, string $sql, $fetch_mode): PromiseInterface
+    private function execute(PromiseInterface $connection_promise, string $sql, $fetch_mode, array $params = []): PromiseInterface
     {
         $deferred = new Deferred();
-        $connection_promise->then(function(Connection $connection) use ($deferred, $sql, $fetch_mode) {
+        $connection_promise->then(function(Connection $connection) use ($deferred, $sql, $fetch_mode, $params) {
             $link = $connection->getLink();
             $link_id = getObjectId($link);
             $this->working[$link_id] = $link;
             $this->linkConnection[$link_id] = $connection;
 
-            $promise = $connection->query($sql, $fetch_mode);
+            $promise = $connection->query($sql, $fetch_mode, $params);
             $this->connectionPoll();
             $deferred->resolve($promise);
         });

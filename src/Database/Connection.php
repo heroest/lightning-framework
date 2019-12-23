@@ -6,6 +6,7 @@ use mysqli;
 use mysqli_result;
 use Throwable;
 use RuntimeException;
+use Lightning\Database\QueryComponent\Expression;
 use Lightning\Database\QueryResult;
 use function LIghtning\container;
 use React\Promise\{Deferred, PromiseInterface};
@@ -69,9 +70,10 @@ class Connection
             throw new RuntimeException('Connection is not ready for query yet');
         }
 
-        if (! empty($params)) {
-            $sql = $this->bindSql($sql, $params);
+        if (!empty($params)) {
+            $sql = $this->bindParamsToSQL($sql, $params);
         }
+        echo "final-sql: {$sql}\r\n";
 
         $this->fetchMode = $fetch_mode;
         $this->updateProfile('time_query', time());
@@ -154,14 +156,15 @@ class Connection
         $this->fetchMode = '';
     }
 
-    private function bindSql(string $sql, array $params)
+    private function bindParamsToSQL(string $sql, array $params)
     {
         $search = [];
         $replace = [];
         foreach ($params as $key => $val) {
-            if (is_string($val)) {
-                $key = "'{$key}'";
-                $val = $this->link->real_escape_string($val);
+            if ($val instanceof Expression) {
+                $val = strval($val);
+            } elseif (is_string($val)) {
+                $val = "'" . $this->link->real_escape_string($val) . "'";
             }
             $search[] = $key;
             $replace[] = $val;

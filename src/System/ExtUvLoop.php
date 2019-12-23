@@ -152,7 +152,14 @@ final class ExtUvLoop implements AwaitableLoopInterface
         $timer = new Timer($interval, $callback, true);
 
         $callback = function () use ($timer) {
+            static $executing = false;
+            if ($executing) {
+                return;
+            }
+            
+            $executing = true;
             \call_user_func($timer->getCallback(), $timer);
+            $executing = false;
         };
 
         $event = \uv_timer_init($this->uv);

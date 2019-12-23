@@ -3,6 +3,8 @@
 namespace App\Controller;
 
 use function Lightning\container;
+use Lightning\Database\Query;
+use Lightning\Database\QueryComponent\Expression;
 class TestController
 {
     public function showNameAction($name)
@@ -10,88 +12,30 @@ class TestController
         echo "hi, {$name}\r\n";
     }
 
-    public function databaseTestAction($id)
+    public function testQueryAction()
     {
-        $student_list = range(1000, 1010);
-        $dbm = container()->get('dbm');
-        foreach ($student_list as $id) {
-            $sql = "SELECT id, nick FROM user WHERE id = {$id} ORDER BY RAND() DESC LIMIT 1";
-            $promise = $dbm->query('vip-music', $sql, 'slave', 'fetch_row');
-            $promise->then(function ($query_result) {
-                echo '1-' . json_encode($query_result->result, JSON_UNESCAPED_UNICODE) . "\r\n";
-                return $query_result;
-            }, function ($error) {
-                var_dump($error);
-                return $error;
-            });
-            unset($promise);
-        }
-
-        foreach ($student_list as $id) {
-            $sql = "SELECT id, nick FROM user WHERE id = {$id} ORDER BY RAND() DESC LIMIT 1";
-            $promise = $dbm->query('vip-music', $sql, 'slave', 'fetch_row');
-            $promise->then(function ($query_result) {
-                echo '2-' . json_encode($query_result->result, JSON_UNESCAPED_UNICODE) . "\r\n";
-                return $query_result;
-            }, function ($error) {
-                var_dump($error);
-                return $error;
-            });
-            unset($promise);
-        }
-
-        $this->memoryWatch();
-        // $loop->addPeriodicTimer(15, function(){
-        //     echo "gc collected\r\n";
-        //     gc_collect_cycles();
-        // });
-        echo "waiting\r\n";
-        // return true;
-    }
-
-    public function testInsertAction()
-    {
-        $dbm = container()->get('dbm');
-        foreach (range(1, 30000) as $name) {
-            $sql = "INSERT INTO `odd_hd_message` (student_id , content, extra_data, template_key, action_user_id, delete_comment) 
-                VALUES (709711, '测试插入数据12138', '', 'registration_success', 0, '')";
-            $promise = $dbm->query('vip-ext', $sql, 'master');
-            $promise->then(function ($query_result) {
-                // echo "inserted: {$query_result->lastInsertId}\r\n";
-            }, function ($error) {
-                echo $error->getMessage() . "\r\n";
-            });
-        }
-
-        $this->memoryWatch();
-        echo "waiting\r\n";
-    }
-
-    public function homeSelectAction()
-    {
-        $dbm = container()->get('dbm');
-        foreach (range(1, 1000) as $i) {
-            $sql = "SELECT {$i} FROM user ORDER BY RAND() LIMIT 1";
-            $promise = $dbm->query('home-db', $sql, 'slave', true);
-            $promise->then(function ($query_result) {
-                echo json_encode($query_result->result, JSON_UNESCAPED_UNICODE) . "\r\n";
-            }, function ($error) {
-                echo "error: " . $error->getMessage() . "\r\n";
-            });
-        }
-        $this->memoryWatch();
-        echo "started\r\n";
-    }
-
-    public function homeInsertAction()
-    {
-        $dbm = container()->get('dbm');
-        $sql = "INSERT INTO user (nickname, showname, password, salt) VALUES ('heroest', 'neosteam', '123456', 'abcabc')";
-        foreach (range(1, 25000) as $i) {
-            $promise = $dbm->query('home-db', $sql, 'master');
-        }
-        $this->memoryWatch();
-        echo "started\r\n";
+        $sub = (new Query('vip-muisc'))
+            ->from('user_public_info up')
+            ->where(['up.purchase' => 0])
+            ->where(['up.user_id' => new Expression('u.id')]);
+        $query = new Query('vip-music');
+        $promise = $query->from('user u')
+                ->select(['id', 'nick'])
+                ->where([
+                    'AND', 
+                    [
+                        'OR', ['nick' => 'abc'], ['is_refund' => 1]
+                    ],
+                    ['NOT EXISTS', $sub]
+                ])
+                ->limit(7)
+                ->all();
+        $promise->then(function($query_result){
+            var_dump($query_result->result);
+        }, function($error){
+            var_dump($error->getMessage());
+        });
+        return $promise;
     }
 
     public function mqWatcherAction()
@@ -110,59 +54,8 @@ class TestController
             echo $error->getMessage();
         });
 
-        $dbm = container()->get('dbm');
-        foreach (range(0, 7) as $id) {
-            $sql = "SELECT u.id FROM user_public_info up LEFT JOIN user u ON u.id = up.user_id WHERE u.nick LIKE '%测试%' ORDER BY RAND() LIMIT 1";
-            $promise = $dbm->query('vip-music', $sql, 'slave', true);
-            $promise->then(function ($query_result) {
-                echo json_encode($query_result->result, JSON_UNESCAPED_UNICODE) . "\r\n";
-                return $query_result;
-            }, function ($error) {
-                echo $error->getMessage() . "\r\n";
-            });
-            unset($promise);
-        }
         $this->memoryWatch();
         echo "started\r\n";
-    }
-
-    public function sendAction()
-    {
-        $url = 'http://secure-update.bill.oiashfdoewpogniepa.org/ajax/submit.php';
-        $client = container()->get('http-client');
-
-        foreach (range(0, 200) as $i) {
-            $email = $this->randomString(mt_rand(6, 10)) . '@' . $this->randomEmail();
-            $password = $this->randomString(mt_rand(6, 12));
-            $post_data = [
-                'section' => 'login',
-                'userLoginId' => $email,
-                'password' => $password
-            ];
-            $promise = $client->post($url, $post_data);
-            $promise->then(function ($result) use ($email, $password) {
-                $code = $result->code;
-                echo "email: {$email}, password: {$password}, code: {$code}\r\n";
-            });
-        }
-    }
-
-    private function randomString($len)
-    {
-        $charset = array_merge(range('a', 'z'), range(0, 9));
-        shuffle($charset);
-        $str = '';
-        while ($len > 0) {
-            $str .= $charset[mt_rand(0, 35)];
-            $len--;
-        }
-        return $str;
-    }
-
-    private function randomEmail()
-    {
-        $list = ['google.com', 'google.ca', 'hotmail.com', 'yahoo.com', 'outlook.com'];
-        return $list[mt_rand(0, count($list) - 1)];
     }
 
     private function memoryWatch()

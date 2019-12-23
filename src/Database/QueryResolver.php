@@ -7,8 +7,6 @@ use InvalidArgumentException;
 
 class QueryResolver
 {
-    private $index = 0;
-
     public function resolveWhere($param): array
     {
         $components = [];
@@ -22,35 +20,35 @@ class QueryResolver
                 } else {
                     $components[] = 'AND';
                 }
-                $components[] = new Where($key, '=', [$val], ++$this->index);
+                $components[] = new Where($key, '=', [$val]);
             }
         } else {
             $first = array_shift($param);
-            if (! is_string($first)) {
+            if (!is_string($first)) {
                 throw new InvalidArgumentException("1st parameter expected to be string, but {gettype($first)} given");
             }
-            $first = strtoupper($first);
-            if (in_array($first, ['IN', 'NOT IN', 'BETWEEN', 'NOT BETWEEN'])) {
-                $components[] = new Where($param[0], $first, $param[1], ++$this->index);
-            } elseif (in_array($first, ['AND', 'OR'])) {
-                $components[] = '(';
+            $_first = strtoupper($first);
+            if (in_array($_first, ['IN', 'NOT IN', 'BETWEEN', 'NOT BETWEEN'])) {
+                $components[] = new Where($param[0], $_first, $param[1]);
+            } elseif (in_array($_first, ['AND', 'OR'])) {
                 $is_first = true;
                 foreach ($param as $row) {
-                    if (! is_array($row)) {
+                    if (!is_array($row)) {
                         throw new InvalidArgumentException("parameter exptected to be array, but {gettype($row)} given");
                     }
                     if (true === $is_first) {
                         $is_first = false;
                     } else {
-                        $components[] = $first;
-                        $components = array_merge($components, self::resolveWhere($row));
+                        $components[] = $_first;
                     }
+                    $components[] = '(';
+                    $components = array_merge($components, $this->resolveWhere($row));
+                    $components[] = ')';
                 }
-                $components[] = ')';
-            } elseif (in_array($first, ['EXISTS', 'NOT EXISTS'])) {
-                $components[] = new Where('', $first, $param[0], ++$this->index);
+            } elseif (in_array($_first, ['EXISTS', 'NOT EXISTS'])) {
+                $components[] = new Where('', $_first, [$param[0]]);
             } else {
-                $components[] = new Where($param[0], $first, $param[1], ++$this->index);
+                $components[] = new Where($first, $param[0], [$param[1]]);
             }
         }
         return $components;
@@ -66,6 +64,19 @@ class QueryResolver
     {
         $components = [];
         return $components;
+    }
+
+    public function resolveLimit(array $params): array
+    {
+        $offset = 0;
+        $take = 0;
+
+        if (2 === count($params)) {
+            list($offset, $take) = $params;
+        } else {
+            $take = $params[0];
+        }
+        return [$offset, $take];
     }
 
     public function resolveGroupBy(array $params): array
