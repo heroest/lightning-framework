@@ -2,7 +2,7 @@
 
 namespace App\Controller;
 
-use function Lightning\container;
+use function Lightning\{container, loop};
 use Lightning\Database\Query;
 use Lightning\Database\QueryComponent\Expression;
 class TestController
@@ -60,8 +60,7 @@ class TestController
 
     private function memoryWatch()
     {
-        $loop = container()->get('loop');
-        $loop->addPeriodicTimer(10, function () {
+        loop()->addPeriodicTimer(10, function () {
             $byte = memory_get_peak_usage(true);
             $peak = number_format(bcdiv($byte, 1024, 4), 2) . "KB";
             $byte = memory_get_usage(true);

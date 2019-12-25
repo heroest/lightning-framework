@@ -26,7 +26,6 @@ class PendingPromises
             return $val;
         };
         $promise->then($closure, $closure);
-        unset($promise);
     }
 
     public static function cacheKey(): string

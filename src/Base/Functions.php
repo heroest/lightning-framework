@@ -126,3 +126,9 @@ function container(): \Lightning\System\Container
 {
     return \Lightning\System\Container::getInstance();
 }
+
+
+function loop(): \Lightning\Base\AwaitableLoopInterface
+{
+    return \Lightning\container()->get('loop');
+}

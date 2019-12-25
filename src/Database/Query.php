@@ -91,7 +91,6 @@ class Query
     public function select(array $select, bool $append = false)
     {
         $this->queryType = self::TYPE_SELECT;
-        $select = array_values($select);
         $this->select = $append ? array_merge($this->select, $select) : $select;
         return $this;
     }
@@ -179,7 +178,7 @@ class Query
         return $dbm->runQuery($this);
     }
 
-    public function compile(bool $rebuild = false)
+    public function compile(bool $rebuild = false): void
     {
         if (!$rebuild and !empty($this->sql)) {
             return;
@@ -212,14 +211,14 @@ class Query
         $this->params = $params;
     }
 
-    private function setDefaultRole(string $role_name)
+    private function setDefaultRole(string $role_name): void
     {
         if (empty($this->connectionRole)) {
             $this->connectionRole = $role_name;
         }
     }
     
-    private function wrappedWhere(string $word, $params)
+    private function wrappedWhere(string $word, $params): void
     {
         if (0 === count($this->where)) {
             $this->where[] = $word;
@@ -236,7 +235,7 @@ class Query
         $components[] = $this->from;
         if (!empty($this->where)) {
             $components[] = "WHERE";
-            $components = array_merge($components, array_values($this->where));
+            $components = array_merge($components, $this->where);
         }
         if (!empty($this->take)) {
             if (empty($this->offset)) {

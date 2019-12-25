@@ -71,7 +71,7 @@ class Connection
         }
 
         if (!empty($params)) {
-            $sql = $this->bindParamsToSQL($sql, $params);
+            $sql = $this->bindParamsToSql($sql, $params);
         }
         echo "final-sql: {$sql}\r\n";
 
@@ -156,7 +156,7 @@ class Connection
         $this->fetchMode = '';
     }
 
-    private function bindParamsToSQL(string $sql, array $params)
+    private function bindParamsToSql(string $sql, array $params)
     {
         $search = [];
         $replace = [];

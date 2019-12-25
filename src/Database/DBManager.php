@@ -4,8 +4,7 @@ namespace Lightning\Database;
 use Lightning\System\PendingPromises;
 use Lightning\Database\{Pool, Connection, Query};
 use React\Promise\{PromiseInterface, Deferred};
-use function Lightning\getObjectId;
-use function Lightning\container;
+use function Lightning\{getObjectId, loop};
 use Lightning\Exceptions\DatabaseException;
 use mysqli;
 
@@ -33,7 +32,7 @@ class DBManager
         );
     }
 
-    public function query(string $connection_name, string $role = 'master', string $sql, string $fetch_mode = 'fetch_row', array $params = [])
+    public function query(string $connection_name, string $role, string $sql, string $fetch_mode = 'fetch_row', array $params = [])
     {
         if (!in_array($fetch_mode, Connection::FETCH_MODES)) {
             throw new DatabaseException("Unknown Fetch Modes: {$fetch_mode}");
@@ -75,36 +74,34 @@ class DBManager
     {
         if ($this->polling) {
             return;
-        } else {
-            container()
-            ->get('loop')
-            ->addTimer(0, function($timer) {
-                $this->polling = false;
-                if (empty($this->working)) {
-                    return;
-                }
-
-                $read = $error = $reject = $this->working;
-                $count = mysqli_poll($read, $error, $reject, 0);
-                if ((count($this->working) - intval($count)) > 0) {
-                    $this->connectionPoll();
-                }
-
-                foreach ($read as $link) {
-                    $link_id = getObjectId($link);
-                    $connection = $this->linkConnection[$link_id];
-                    unset(
-                        $this->working[$link_id],
-                        $this->linkConnection[$link_id]
-                    );
-                    if ($result = $link->reap_async_query()) {
-                        $connection->resolve($result);
-                    } else {
-                        $connection->reject(new DatabaseException($link->error, $link->errno));
-                    }
-                }
-            });
         }
+            
+        loop()->addTimer(0, function($timer) {
+            $this->polling = false;
+            if (empty($this->working)) {
+                return;
+            }
+
+            $read = $error = $reject = $this->working;
+            $count = mysqli_poll($read, $error, $reject, 0);
+            if ((count($this->working) - intval($count)) > 0) {
+                $this->connectionPoll();
+            }
+
+            foreach ($read as $link) {
+                $link_id = getObjectId($link);
+                $connection = $this->linkConnection[$link_id];
+                unset(
+                    $this->working[$link_id],
+                    $this->linkConnection[$link_id]
+                );
+                if ($result = $link->reap_async_query()) {
+                    $connection->resolve($result);
+                } else {
+                    $connection->reject(new DatabaseException($link->error, $link->errno));
+                }
+            }
+        });
     }
 
     //from Yii
