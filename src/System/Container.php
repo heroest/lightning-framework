@@ -11,6 +11,7 @@ class Container
     private $definitions = [];
     private $components = [];
     private $core = [];
+    private $isDebug = false;
 
     private function __construct() {}
 
@@ -20,6 +21,18 @@ class Container
             self::$instance = new self();
         }
         return self::$instance;
+    }
+
+    public function setClassLoader(bool $is_debug)
+    {
+        $this->isDebug = $is_debug;
+        spl_autoload_register(function($class) {
+            $class_arr = explode('\\', $class);
+            $first = array_shift($class_arr);
+            if ($first === 'Lightning') {
+                self::requireClassFile($class);
+            }
+        });
     }
 
     public function set(string $name, $mixed, bool $is_core = false)
@@ -89,5 +102,10 @@ class Container
             $this->components[$name] = $closure();
         }
         return $this->components[$name];
+    }
+
+    private static function requireClassFile($class)
+    {
+
     }
 }

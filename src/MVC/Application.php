@@ -26,7 +26,7 @@ class Application extends \Lightning\Base\Application
     {
         $loop = container()->get('loop');
         $server = new Server([$this, 'handleRequest']);
-        $server->listen(new SocketServer($port, $loop));
+        $server->listen(new SocketServer("0.0.0.0:{$port}", $loop));
         echo "sever listening on port: {$port}\r\n";
         $loop->run();
     }

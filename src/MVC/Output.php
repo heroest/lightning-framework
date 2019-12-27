@@ -24,7 +24,7 @@ class Output
         $this->deferred = new Deferred();
     }
 
-    public function setData(string $type = self::TYPE_TEXT, $mixed)
+    public function setData(string $type, $mixed)
     {
         $content_type = '';
         switch ($type) {

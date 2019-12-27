@@ -11,7 +11,7 @@ ini_set('memory_limit', -1);
 $app = new \Lightning\MVC\Application('App');
 
 $loop = \lightning\container()->get('loop');
-$loop->addPeriodicTimer(5, function() {
+$loop->addPeriodicTimer(15, function() {
     $byte = memory_get_peak_usage(true);
     $peak = number_format(bcdiv($byte, 1024, 4), 2) . "KB";
     $byte = memory_get_usage(true);
@@ -20,7 +20,7 @@ $loop->addPeriodicTimer(5, function() {
     $php_current = number_format(bcdiv($byte, 1024, 4), 2) . "KB";
     $byte = memory_get_peak_usage(true);
     $php_peak = number_format(bcdiv($byte, 1024, 4), 2) . "KB";
-    echo json_encode(['total_peak' => $peak, 'total_current' => $current, 'php_peak' => $php_peak, 'php_current' => $php_current]) . "\r\n";
+    echo json_encode(['time' => date('Y-m-d H:i:s'), 'total_peak' => $peak, 'total_current' => $current, 'php_peak' => $php_peak, 'php_current' => $php_current]) . "\r\n";
 });
 
 $input = $_SERVER['argv'];
