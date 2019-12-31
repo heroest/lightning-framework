@@ -3,6 +3,7 @@ namespace Lightning\Database;
 
 use function Lightning\isAssoc;
 use Lightning\Database\QueryComponent\Where;
+use Lightning\Database\QueryComponent\Expression;
 use InvalidArgumentException;
 
 class QueryResolver
@@ -27,10 +28,10 @@ class QueryResolver
             if (!is_string($first)) {
                 throw new InvalidArgumentException("1st parameter expected to be string, but {gettype($first)} given");
             }
-            $_first = strtoupper($first);
-            if (in_array($_first, ['IN', 'NOT IN', 'BETWEEN', 'NOT BETWEEN'])) {
-                $components[] = new Where($param[0], $_first, $param[1]);
-            } elseif (in_array($_first, ['AND', 'OR'])) {
+            $ufirst = strtoupper($first);
+            if (in_array($ufirst, ['IN', 'NOT IN', 'BETWEEN', 'NOT BETWEEN'])) {
+                $components[] = new Where($param[0], $ufirst, $param[1]);
+            } elseif (in_array($ufirst, ['AND', 'OR'])) {
                 $is_first = true;
                 foreach ($param as $row) {
                     if (!is_array($row)) {
@@ -39,16 +40,16 @@ class QueryResolver
                     if (true === $is_first) {
                         $is_first = false;
                     } else {
-                        $components[] = $_first;
+                        $components[] = $ufirst;
                     }
                     $components[] = '(';
                     $components = array_merge($components, $this->resolveWhere($row));
                     $components[] = ')';
                 }
-            } elseif (in_array($_first, ['EXISTS', 'NOT EXISTS'])) {
-                $components[] = new Where('', $_first, [$param[0]]);
+            } elseif (in_array($ufirst, ['EXISTS', 'NOT EXISTS'])) {
+                $components[] = new Where('', $ufirst, [$param[0]]);
             } else {
-                $components[] = new Where($first, $param[0], [$param[1]]);
+                $components[] = new Where($param[0], $first, [$param[1]]);
             }
         }
         return $components;
@@ -60,10 +61,37 @@ class QueryResolver
         return $components;
     }
 
-    public function resolveOrderBy(array $params): array
+    public function resolveOrderBy($line): string
     {
-        $components = [];
-        return $components;
+        if ($line instanceof Expression) {
+            return $line;
+        }
+
+        $result = [];
+        $pattern = "#([^\s\.`]{1,})\.?([^\s\.`]*)`?\s*(ASC|DESC)?#i";
+        foreach (explode(',', $line) as $item) {
+            $matches = [];
+            $block = [];
+            $res = preg_match($pattern, $item, $matches);
+            if (empty($res)) {
+                throw new InvalidArgumentException("Unable to resove orderBy statement: {$line}");
+            }
+            $table = $matches[1];
+            $column = $matches[2];
+            $order = $matches[3];
+
+            $block[] = "`{$table}`";
+            if (!empty($column)) {
+                $block[] = ".`{$column}`";
+            }
+            if (empty($order)) {
+                $block[] = ' ASC';
+            } else {
+                $block[] = ' ' . strtoupper($order);
+            }
+            $result[] = implode('', $block);
+        }
+        return implode(',', $result);
     }
 
     public function resolveLimit(array $params): array

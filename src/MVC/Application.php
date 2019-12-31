@@ -46,7 +46,8 @@ class Application extends \Lightning\Base\Application
                 json_encode([
                     'msg' => $e->getMessage(), 
                     'file' => $e->getFile(), 
-                    'line' => $e->getLine()
+                    'line' => $e->getLine(),
+                    'trace' => explode("\n", $e->getTraceAsString())
                 ], JSON_UNESCAPED_UNICODE)
             );
         }

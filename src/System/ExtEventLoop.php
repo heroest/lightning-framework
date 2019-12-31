@@ -6,7 +6,7 @@ use BadMethodCallException;
 use Event;
 use EventBase;
 use EventConfig;
-use React\EventLoop\Tick\FutureTickQueue;
+use Lightning\System\FutureTickQueue;
 use React\EventLoop\Timer\Timer;
 use React\EventLoop\{SignalsHandler, TimerInterface};
 use SplObjectStorage;
@@ -177,7 +177,7 @@ final class ExtEventLoop implements AwaitableLoopInterface
     {
         $this->signals->remove($signal, $listener);
 
-        if (isset($this->signalEvents[$signal]) && $this->signals->count($signal) === 0) {
+        if (isset($this->signalEvents[$signal]) and $this->signals->count($signal) === 0) {
             $this->signalEvents[$signal]->free();
             unset($this->signalEvents[$signal]);
         }
@@ -191,15 +191,14 @@ final class ExtEventLoop implements AwaitableLoopInterface
             $this->futureTickQueue->tick();
 
             $flags = EventBase::LOOP_ONCE;
-            if (!$this->running || !$this->futureTickQueue->isEmpty()) {
+            if (!$this->running or !$this->futureTickQueue->isEmpty()) {
                 $flags |= EventBase::LOOP_NONBLOCK;
             } elseif ($this->readEvents->isEmpty() 
-                        && $this->writeEvents->isEmpty() 
-                        && !$this->timerEvents->count() 
-                        && $this->signals->isEmpty()) {
+                        and $this->writeEvents->isEmpty() 
+                        and !$this->timerEvents->count() 
+                        and $this->signals->isEmpty()) {
                 break;
             }
-
             $this->eventBase->loop($flags);
         }
     }
@@ -239,22 +238,18 @@ final class ExtEventLoop implements AwaitableLoopInterface
     {
         $timers = $this->timerEvents;
         $this->timerCallback = function ($_, $__, $timer) use ($timers) {
-            static $executing = [];
-            if ($timer->isPeriodic()) {
-                $id = spl_object_hash($timer);
-                if (isset($executing[$id])) {
-                    return;
-                }
-                $executing[$id] = true;
-                \call_user_func($timer->getCallback(), $timer);
-                unset($executing[$id]);
-            } else {
-                if ($timers->contains($timer)) {
-                    $this->cancelTimer($timer);
-                }
-                \call_user_func($timer->getCallback(), $timer);
-            }
+            $this->timerToTick($timer);
         };
+    }
+
+    private function timerToTick(TimerInterface $timer)
+    {
+        $this->futureTick(function() use ($timer) {
+            \call_user_func($timer->getCallback(), $timer);
+            if ((!$timer->isPeriodic()) or (!$this->timerEvents->contains($timer))) {
+                $this->cancelTimer($timer);
+            }
+        });
     }
 
     /**
@@ -266,18 +261,26 @@ final class ExtEventLoop implements AwaitableLoopInterface
      */
     private function createStreamCallback()
     {
-        $read =& $this->readListeners;
-        $write =& $this->writeListeners;
-        $this->streamCallback = function ($stream, $flags) use (&$read, &$write) {
+       
+        $this->streamCallback = function ($stream, $flags) {
+            $read = $this->readListeners;
+            $write = $this->writeListeners;
             $key = (int) $stream;
 
-            if (Event::READ === (Event::READ & $flags) && isset($read[$key])) {
-                \call_user_func($read[$key], $stream);
+            if (Event::READ === (Event::READ & $flags) and isset($read[$key])) {
+                $this->streamToTick($read[$key], $stream);
             }
 
-            if (Event::WRITE === (Event::WRITE & $flags) && isset($write[$key])) {
-                \call_user_func($write[$key], $stream);
+            if (Event::WRITE === (Event::WRITE & $flags) and isset($write[$key])) {
+                $this->streamToTick($write[$key], $stream);
             }
         };
+    }
+
+    private function streamToTick($callback, $stream)
+    {
+        $this->futureTick(function() use ($callback, $stream){
+            \call_user_func($callback, $stream);
+        });
     }
 }

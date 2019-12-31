@@ -6,48 +6,27 @@ namespace Lightning;
  *
  * @param PromiseInterface $promise
  * @param StreamSelectLoop $loop
- * @return void
+ * @return mixed
  */
-function await(\React\Promise\PromiseInterface $promise, \Lightning\Base\AwaitableLoopInterface $loop): void
+function await(\React\Promise\PromiseInterface $promise, \Lightning\Base\AwaitableLoopInterface $loop)
 {
     $nested = clone $loop;
+    $result = null;
     $promise->then(
-        function($value) use (&$nested) {
+        function($value) use (&$nested, &$result) {
+            $result = $value;
             $nested->stop();
             unset($nested);
             return $value;
         },
-        function($error) use (&$nested) {
+        function($error) use (&$nested, &$result) {
+            $result = $error;
             $nested->stop();
             unset($nested);
             return $error;
         }
     );
     $nested->run();
-}
-
-/**
- * Block-wait for promise to resolve or rejct and return promise value or throw rejection
- *
- * @param \React\Promise\PromiseInterface $promise
- * @param \Lightning\Base\AwaitableLoopInterface $loop
- * @return mixed
- * @throws Throwable
- */
-function awaitForResult(\React\Promise\PromiseInterface $promise, \Lightning\Base\AwaitableLoopInterface $loop)
-{
-    $result = null;
-    $promise->then(
-        function($value) use (&$result) {
-            $result = $value;
-            return $value;
-        }, 
-        function($error) use (&$result) {
-            $result = $error;
-            return $error;
-        }
-    );
-    \Lightning\await($promise, $loop);
     if ($result instanceof \Throwable) {
         throw $result;
     } else {

@@ -31,6 +31,7 @@ class Query
     private $values = [];
     private $offset = 0;
     private $take = 0;
+    private $orderBy = '';
 
     public function __construct(string $connection_name, string $connection_role = '')
     {
@@ -132,9 +133,10 @@ class Query
         return $this;
     }
 
-    public function orderBy()
+    public function orderBy($clause)
     {
-
+        $this->orderBy = $this->resolver->resolveOrderBy($clause);
+        return $this;
     }
 
     public function groupBy()
@@ -220,7 +222,7 @@ class Query
     
     private function wrappedWhere(string $word, $params): void
     {
-        if (0 === count($this->where)) {
+        if (0 < count($this->where)) {
             $this->where[] = $word;
         }
         $this->where = array_merge($this->where, $this->resolver->resolveWhere($params));
@@ -233,10 +235,16 @@ class Query
         $components[] = implode(',', $this->select);
         $components[] = "FROM";
         $components[] = $this->from;
+
         if (!empty($this->where)) {
             $components[] = "WHERE";
             $components = array_merge($components, $this->where);
         }
+
+        if (!empty($this->orderBy)) {
+            $components[] = "ORDER BY {$this->orderBy}";
+        }
+
         if (!empty($this->take)) {
             if (empty($this->offset)) {
                 $components[] = "LIMIT {$this->take}";
@@ -244,6 +252,7 @@ class Query
                 $components[] = "LIMIT {$this->offset}, {$this->take}";
             }
         }
+        
         return $components;
     }
 }

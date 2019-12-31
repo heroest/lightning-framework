@@ -73,7 +73,7 @@ class Connection
         if (!empty($params)) {
             $sql = $this->bindParamsToSql($sql, $params);
         }
-        echo "final-sql: {$sql}\r\n";
+        // echo "final-sql: {$sql}\r\n";
 
         $this->fetchMode = $fetch_mode;
         $this->updateProfile('time_query', time());
