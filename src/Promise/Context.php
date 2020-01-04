@@ -1,9 +1,9 @@
 <?php
-namespace Lightning\System;
+namespace Lightning\Promise;
 
 use React\Promise\PromiseInterface;
 
-class PendingPromises
+class Context
 {
     private static $storage = [];
 

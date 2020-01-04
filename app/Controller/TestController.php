@@ -4,7 +4,7 @@ namespace App\Controller;
 
 use function Lightning\{container, loop};
 use Lightning\Database\Query;
-use Lightning\Database\QueryComponent\Expression;
+use Lightning\Database\Expression;
 class TestController
 {
     public function showNameAction($name)

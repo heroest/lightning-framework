@@ -1,5 +1,5 @@
 <?php
-namespace Lightning\Database\QueryComponent;
+namespace Lightning\Database;
 
 class Expression
 {

@@ -1,18 +1,20 @@
 <?php
 
-namespace Lightning\System;
+namespace Lightning\EventLoop;
 
 use BadMethodCallException;
 use Event;
 use EventBase;
 use EventConfig;
-use Lightning\System\FutureTickQueue;
+use Lightning\EventLoop\FutureTickQueue;
 use React\EventLoop\Timer\Timer;
 use React\EventLoop\{SignalsHandler, TimerInterface};
 use SplObjectStorage;
 use Lightning\Base\{ArrayObject, AwaitableLoopInterface};
 
 /**
+ * {{This is alternative version of \React\ExtEventLoop}}
+ * 
  * An `ext-event` based event loop.
  *
  * This uses the [`event` PECL extension](https://pecl.php.net/package/event).
@@ -38,6 +40,7 @@ final class ExtEventLoop implements AwaitableLoopInterface
     private $running;
     private $signals;
     private $signalEvents = null;
+    private $mutex = null;
 
     public function __construct()
     {
@@ -46,7 +49,7 @@ final class ExtEventLoop implements AwaitableLoopInterface
         }
 
         $config = new EventConfig();
-        $config->requireFeatures(EventConfig::FEATURE_FDS);
+        // $config->requireFeatures(EventConfig::FEATURE_FDS);
         $config->avoidMethod("select");
 
         $this->eventBase = new EventBase($config);
@@ -61,6 +64,7 @@ final class ExtEventLoop implements AwaitableLoopInterface
         $this->readRefs = new ArrayObject();
         $this->writeRefs = new ArrayObject();
         $this->signalEvents = new ArrayObject();
+        $this->mutex = new SplObjectStorage();
 
         $this->createTimerCallback();
         $this->createStreamCallback();
@@ -244,8 +248,14 @@ final class ExtEventLoop implements AwaitableLoopInterface
 
     private function timerToTick(TimerInterface $timer)
     {
+        if ($this->mutex->contains($timer)) {
+            return;
+        }
+
+        $this->mutex->attach($timer);
         $this->futureTick(function() use ($timer) {
             \call_user_func($timer->getCallback(), $timer);
+            $this->mutex->detach($timer);
             if ((!$timer->isPeriodic()) or (!$this->timerEvents->contains($timer))) {
                 $this->cancelTimer($timer);
             }
@@ -279,8 +289,8 @@ final class ExtEventLoop implements AwaitableLoopInterface
 
     private function streamToTick($callback, $stream)
     {
-        $this->futureTick(function() use ($callback, $stream){
+        $this->futureTick((function() use ($callback, $stream){
             \call_user_func($callback, $stream);
-        });
+        })->bindTo(null));
     }
 }

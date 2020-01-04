@@ -1,11 +1,11 @@
 <?php
-namespace Lightning\System;
+namespace Lightning\EventLoop;
 
 use \React\EventLoop\Tick\FutureTickQueue;
 use \React\EventLoop\Timer\Timer;
 use \React\EventLoop\{TimerInterface, SignalsHandler};
 use \Lightning\Base\{ArrayObject, AwaitableLoopInterface};
-use \Lightning\System\Timers;
+use \Lightning\EventLoop\Timers;
 
 
 /**

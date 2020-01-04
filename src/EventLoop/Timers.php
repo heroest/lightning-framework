@@ -1,6 +1,6 @@
 <?php
 
-namespace Lightning\System;
+namespace Lightning\EventLoop;
 
 use React\EventLoop\TimerInterface;
 

@@ -12,7 +12,7 @@ abstract class Application
     {
         $container = \Lightning\container();
         $container->set('app', $this, true);
-        $container->set('loop', \Lightning\System\LoopFactory::buildLoop(), true);
+        $container->set('loop', \Lightning\EventLoop\LoopFactory::buildLoop(), true);
         $container->set('event-manager', \Lightning\Event\EventManager::class, true);
         
         $container->set('config', function() {

@@ -5,11 +5,15 @@ namespace Lightning;
  * Block-wait for promise to resolve or reject
  *
  * @param PromiseInterface $promise
- * @param StreamSelectLoop $loop
+ * @param StreamSelectLoop|null $loop
  * @return mixed
  */
-function await(\React\Promise\PromiseInterface $promise, \Lightning\Base\AwaitableLoopInterface $loop)
+function await(\React\Promise\PromiseInterface $promise, \Lightning\Base\AwaitableLoopInterface $loop = null)
 {
+    if ($loop === null) {
+        $loop = \lightning\loop();
+    }
+
     $nested = clone $loop;
     $result = null;
     $promise->then(
@@ -26,6 +30,7 @@ function await(\React\Promise\PromiseInterface $promise, \Lightning\Base\Awaitab
             return $error;
         }
     );
+    
     $nested->run();
     if ($result instanceof \Throwable) {
         throw $result;
@@ -85,6 +90,14 @@ function arrayCount($mixed): int
     }
 }
 
+function msDateNow(): string
+{
+    list($sec, $msec) = explode('.', microtime(true));
+    $msec = str_pad($msec, 4, '0', STR_PAD_RIGHT);
+    $now = date('Y-m-d H:i:s', $sec);
+    return $now . '.' . $msec;
+}
+
 /**
  * get object id
  *
@@ -106,8 +119,22 @@ function container(): \Lightning\System\Container
     return \Lightning\System\Container::getInstance();
 }
 
-
+/**
+ * container: get loop
+ *
+ * @return \Lightning\Base\AwaitableLoopInterface
+ */
 function loop(): \Lightning\Base\AwaitableLoopInterface
 {
     return \Lightning\container()->get('loop');
+}
+
+/**
+ * container: get config
+ *
+ * @return \Lightning\System\Config
+ */
+function config(): \Lightning\System\Config
+{
+    return \Lightning\container()->get('config');
 }

@@ -3,7 +3,7 @@ namespace Lightning\Database;
 
 use function Lightning\isAssoc;
 use Lightning\Database\QueryComponent\Where;
-use Lightning\Database\QueryComponent\Expression;
+use Lightning\Database\Expression;
 use InvalidArgumentException;
 
 class QueryResolver
@@ -24,14 +24,14 @@ class QueryResolver
                 $components[] = new Where($key, '=', [$val]);
             }
         } else {
-            $first = array_shift($param);
-            if (!is_string($first)) {
-                throw new InvalidArgumentException("1st parameter expected to be string, but {gettype($first)} given");
+            $op = array_shift($param);
+            if (!is_string($op)) {
+                throw new InvalidArgumentException("1st parameter expected to be string, but {gettype($op)} given");
             }
-            $ufirst = strtoupper($first);
-            if (in_array($ufirst, ['IN', 'NOT IN', 'BETWEEN', 'NOT BETWEEN'])) {
-                $components[] = new Where($param[0], $ufirst, $param[1]);
-            } elseif (in_array($ufirst, ['AND', 'OR'])) {
+            $op = strtoupper($op);
+            if (in_array($op, ['IN', 'NOT IN', 'BETWEEN', 'NOT BETWEEN'])) {
+                $components[] = new Where($param[0], $op, $param[1]);
+            } elseif (in_array($op, ['AND', 'OR'])) {
                 $is_first = true;
                 foreach ($param as $row) {
                     if (!is_array($row)) {
@@ -40,16 +40,16 @@ class QueryResolver
                     if (true === $is_first) {
                         $is_first = false;
                     } else {
-                        $components[] = $ufirst;
+                        $components[] = $op;
                     }
                     $components[] = '(';
                     $components = array_merge($components, $this->resolveWhere($row));
                     $components[] = ')';
                 }
-            } elseif (in_array($ufirst, ['EXISTS', 'NOT EXISTS'])) {
-                $components[] = new Where('', $ufirst, [$param[0]]);
+            } elseif (in_array($op, ['EXISTS', 'NOT EXISTS'])) {
+                $components[] = new Where('', $op, [$param[0]]);
             } else {
-                $components[] = new Where($param[0], $first, [$param[1]]);
+                $components[] = new Where($param[0], $op, [$param[1]]);
             }
         }
         return $components;

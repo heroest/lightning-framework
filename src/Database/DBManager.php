@@ -1,7 +1,7 @@
 <?php
 namespace Lightning\Database;
 
-use Lightning\System\PendingPromises;
+use Lightning\Promise\Context;
 use Lightning\Database\{Pool, Connection, Query};
 use React\Promise\{PromiseInterface, Deferred};
 use function Lightning\{getObjectId, loop};
@@ -39,8 +39,8 @@ class DBManager
         }
 
         if (self::isReadQuery($sql)) {
-            $cache_key = PendingPromises::cacheKey($connection_name, $sql, $role, $fetch_mode);
-            if ($promise = PendingPromises::get($cache_key)) {
+            $cache_key = Context::cacheKey($connection_name, $sql, $role, $fetch_mode);
+            if ($promise = Context::get($cache_key)) {
                 return $promise;
             }
         }
@@ -49,7 +49,7 @@ class DBManager
         $promise = $this->execute($connection_promise, $sql, $fetch_mode, $params);
 
         if (isset($cache_key)) {
-            PendingPromises::set($cache_key, $promise);
+            Context::set($cache_key, $promise);
         }
         return $promise;
     }

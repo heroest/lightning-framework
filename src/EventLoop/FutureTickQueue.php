@@ -1,6 +1,6 @@
 <?php
 
-namespace Lightning\System;
+namespace Lightning\EventLoop;
 
 use SplQueue;
 
@@ -39,9 +39,7 @@ final class FutureTickQueue
     public function tick()
     {
         while (!$this->queue->isEmpty()) {
-            \call_user_func(
-                $this->queue->dequeue()
-            );
+            \call_user_func($this->queue->dequeue());
         }
     }
 
