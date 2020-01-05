@@ -22,5 +22,4 @@ return array(
     'React\\Cache\\' => array($vendorDir . '/react/cache/src'),
     'Psr\\Http\\Message\\' => array($vendorDir . '/psr/http-message/src'),
     'Lightning\\' => array($baseDir . '/src'),
-    'App\\' => array($baseDir . '/app'),
 );

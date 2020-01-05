@@ -21,8 +21,7 @@
     "minimum-stability": "stable",
     "autoload": {
         "psr-4": {
-            "Lightning\\": "src/",
-            "App\\": "app/"
+            "Lightning\\": "src/"
         },
         "files": [
             "src/function_include.php"

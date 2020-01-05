@@ -43,10 +43,6 @@ class ComposerStaticInit6e04c00097eb418cc087ce59f1d98c03
         array (
             'Lightning\\' => 10,
         ),
-        'A' => 
-        array (
-            'App\\' => 4,
-        ),
     );
 
     public static $prefixDirsPsr4 = array (
@@ -113,10 +109,6 @@ class ComposerStaticInit6e04c00097eb418cc087ce59f1d98c03
         'Lightning\\' => 
         array (
             0 => __DIR__ . '/../..' . '/src',
-        ),
-        'App\\' => 
-        array (
-            0 => __DIR__ . '/../..' . '/app',
         ),
     );
 
