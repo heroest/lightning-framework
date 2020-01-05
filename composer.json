@@ -1,5 +1,5 @@
 {
-    "name": "heroest/lightning",
+    "name": "heroest/lightning-framework",
     "description": "basic console operation",
     "type": "library",
     "require": {
