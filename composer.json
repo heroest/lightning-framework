@@ -1,6 +1,6 @@
 {
-    "name": "heroest/lightning-framework",
-    "description": "basic console operation",
+    "name": "heroest/lightning-react-framework",
+    "description": "non-block I/O framework",
     "type": "library",
     "require": {
         "react/event-loop": "^1.1",
