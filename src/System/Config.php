@@ -1,4 +1,5 @@
 <?php
+
 namespace Lightning\System;
 
 use function Lightning\{isAssoc, arrayMergeRecursive};
@@ -16,7 +17,6 @@ class Config
 
     public function __construct()
     {
-
     }
 
     public function get(string $key, $default = null, bool $deep = true)
@@ -32,6 +32,10 @@ class Config
     public function loadFromDirectory(string $path)
     {
         $path = rtrim($path, '/\\');
+        if (!file_exists($path)) {
+            return;
+        }
+
         foreach (new DirectoryIterator($path) as $file) {
             if ($file->isDot()) {
                 continue;
@@ -65,7 +69,7 @@ class Config
         }
 
         switch ($file_type) {
-            case 'json': 
+            case 'json':
                 $this->loadJson(file_get_contents($file_path));
                 break;
 
@@ -81,7 +85,6 @@ class Config
             default:
                 throw new InvalidArgumentException("Unknown file type: {$file_type}");
         }
-        
     }
 
     /**

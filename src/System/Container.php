@@ -1,4 +1,5 @@
 <?php
+
 namespace Lightning\System;
 
 use Lightning\Exceptions\SystemException;
@@ -10,10 +11,13 @@ class Container
     private static $instance;
     private $definitions = [];
     private $components = [];
-    private $core = [];
+    private $singleton = [];
+    private $map = [];
     private $isDebug = false;
 
-    private function __construct() {}
+    private function __construct()
+    {
+    }
 
     public static function getInstance(): self
     {
@@ -23,7 +27,39 @@ class Container
         return self::$instance;
     }
 
-    public function set(string $name, $mixed, bool $is_core = false)
+    public function setClassMap($namespace, $path)
+    {
+        if (substr($namespace, -1) != "\\") {
+            throw new InvalidArgumentException("Namepsace must end with namespace separator");
+        }
+        $this->map[$namespace] = rtrim($path, "\\/");
+    }
+
+    public function registerAutoload()
+    {
+        static $registered = false;
+        if (!$registered) {
+            spl_autoload_register([$this, 'loadClassFile']);
+            $registered = true;
+        }
+    }
+
+    public function loadClassFile($class)
+    {
+        foreach ($this->map as $namespace => $path) {
+            if (strpos($class, $namespace) === 0) {
+                $pattern = '#' . addslashes($namespace) . '#';
+                $sub = preg_replace($pattern, '', $class, 1);
+                $full = $path . '/' . str_replace('\\', '/', $sub) . '.php';
+                if (file_exists($full)) {
+                    include $full;
+                    return false; //stop loader chain
+                }
+            }
+        }
+    }
+
+    public function set(string $name, $mixed, bool $is_singleton = false)
     {
         if (is_string($mixed) or ($mixed instanceof Closure)) {
             $this->definitions[$name] = $mixed;
@@ -33,8 +69,8 @@ class Container
             throw new InvalidArgumentException(__METHOD__ . ' 2nd parameter expect to string, closure or object');
         }
 
-        if ($is_core) {
-            $this->core[$name] = true;
+        if ($is_singleton) {
+            $this->singleton[$name] = true;
         }
     }
 
@@ -51,7 +87,7 @@ class Container
 
     public function fresh(string $name)
     {
-        if (isset($this->components[$name]) and isset($this->core[$name])) {
+        if (isset($this->components[$name]) and isset($this->singleton[$name])) {
             throw new SystemException("Core Component {$name} has been initialized already");
         } elseif (isset($this->definitions[$name])) {
             return $this->createComponent($name);

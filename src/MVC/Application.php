@@ -14,11 +14,8 @@ use Throwable;
 
 class Application extends \Lightning\Base\Application
 {
-    private $namespace;
-
-    public function __construct($namespace)
+    public function __construct()
     {
-        $this->namespace = $namespace;
         $this->bootstrap();
     }
 
@@ -61,7 +58,7 @@ class Application extends \Lightning\Base\Application
         } elseif (false === strpos($route, '/')) {
             $route = "{$route}/index";
         }
-        list($controller_name, $action_name) = self::fetchControllerAction($this->namespace, $route);
+        list($controller_name, $action_name) = self::fetchControllerAction($route);
 
         $container = container();
         if (!class_exists($controller_name)) {

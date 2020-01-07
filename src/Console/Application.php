@@ -7,11 +7,8 @@ use BadMethodCallException;
 
 class Application extends \Lightning\Base\Application
 {
-    private $namespace;
-
-    public function __construct($namespace)
+    public function __construct()
     {
-        $this->namespace = $namespace;
         $this->bootstrap();
     }
     
@@ -45,7 +42,7 @@ class Application extends \Lightning\Base\Application
         $input = $_SERVER['argv'];
         array_shift($input);
         $route = array_shift($input);
-        list($controller_name, $action_name) = self::fetchControllerAction($this->namespace, $route);
+        list($controller_name, $action_name) = self::fetchControllerAction($route);
         return [$controller_name, $action_name, $input];
     }
 }
