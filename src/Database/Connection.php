@@ -117,12 +117,18 @@ class Connection
                 $config['host'],
                 $config['username'],
                 $config['password'],
-                $config['dbname']
+                $config['dbname'],
+                $config['port']
             );
             $this->changeState(self::STATE_IDLE);
             return true;
         } catch (Throwable $e) {
             //do log stuff
+            echo json_encode([
+                'code' => $e->getCode(),
+                'msg' => $e->getMessage(),
+                'config' => $config
+            ]) . "\r\n";
             return false;
         }
     }

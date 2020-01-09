@@ -165,8 +165,8 @@ class Query
         $this->fetchMode = 'fetch_row';
         $this->compile();
 
-        $dbm = container()->get('dbm');
-        return $dbm->runQuery($this);
+        $dbm = container()->get('dbm');       
+        return self::fetchResultPromise($dbm->runQuery($this));
     }
 
     public function all()
@@ -177,7 +177,7 @@ class Query
         $this->compile();
 
         $dbm = container()->get('dbm');
-        return $dbm->runQuery($this);
+        return self::fetchResultPromise($dbm->runQuery($this));
     }
 
     public function compile(bool $rebuild = false): void
@@ -254,5 +254,14 @@ class Query
         }
         
         return $components;
+    }
+
+    private static function fetchResultPromise(PromiseInterface $promise)
+    {
+        return $promise->then(function ($query_result) {
+            return $query_result->result;
+        }, function ($error) {
+            return $error;
+        });
     }
 }

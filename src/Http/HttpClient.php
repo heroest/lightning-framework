@@ -66,6 +66,27 @@ class HttpClient
         return $deferred->promise();
     }
 
+    public function jsonPost(string $url, array $post_data = [], array $headers = []): PromiseInterface
+    {
+        $deferred = new Deferred();
+        $result = new RequestResult();
+        $post_field = json_encode($post_data, JSON_UNESCAPED_UNICODE);
+        $post_headers = [
+            'Content-Type' => 'application/json',
+            'Content-Length' => strlen($post_field)
+        ];
+        $request = $this->client->request('POST', $url, array_merge($post_headers, $headers));
+        $result->time_request = microtime(true);
+        $request->on('response', function(Response $response) use ($request, $deferred, $result) {
+            self::handleResponse($request, $response, $result, $deferred);
+        });
+        $request->on('error', function($error) use ($deferred){
+            $deferred->reject($error);
+        });
+        $request->end($post_field);
+        return $deferred->promise();
+    }
+
     private static function handleResponse(Request $request, Response $response, RequestResult $result, Deferred $deferred)
     {
         $result->time_response = microtime(true);
