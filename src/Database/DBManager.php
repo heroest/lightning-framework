@@ -98,7 +98,7 @@ class DBManager
                 if ($result = $link->reap_async_query()) {
                     $connection->resolve($result);
                 } else {
-                    $connection->reject(new DatabaseException($link->error, $link->errno));
+                    $connection->resolve(new DatabaseException($link->error, $link->errno));
                 }
             }
         });

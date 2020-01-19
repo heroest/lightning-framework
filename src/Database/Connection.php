@@ -73,7 +73,6 @@ class Connection
         if (!empty($params)) {
             $sql = $this->bindParamsToSql($sql, $params);
         }
-        // echo "final-sql: {$sql}\r\n";
 
         $this->fetchMode = $fetch_mode;
         $this->updateProfile('time_query', time());
@@ -83,17 +82,9 @@ class Connection
         return $this->deferred->promise();
     }
 
-    public function resolve($result)
+    public function resolve($mixed)
     {
-        $query_result = $this->fetchQueryResult($result);
-        $this->deferred->resolve($query_result);
-        $this->reset();
-        $this->changeState(self::STATE_IDLE);
-    }
-
-    public function reject(Throwable $error)
-    {
-        $this->deferred->reject($error);
+        $this->deferred->resolve($this->fetchQueryResult($mixed));
         $this->reset();
         $this->changeState(self::STATE_IDLE);
     }
@@ -172,18 +163,20 @@ class Connection
         return str_replace($search, $replace, $sql);
     }
 
-    private function fetchQueryResult($result): QueryResult
+    private function fetchQueryResult($mixed): QueryResult
     {
-        if ($result instanceof mysqli_result) {
+        if ($mixed instanceof mysqli_result) {
             if ($this->fetchMode == 'fetch_row') {
-                $data = $result->fetch_assoc();
+                $data = $mixed->fetch_assoc();
             } elseif ($this->fetchMode == 'fetch_all') {
-                $data = $result->fetch_all(MYSQLI_ASSOC);
+                $data = $mixed->fetch_all(MYSQLI_ASSOC);
             }
-            $result->close();
-            return new QueryResult($data);
+            $mixed->close();
+            return QueryResult::setQueryResult($data);
+        } elseif ($mixed instanceof Throwable) {
+            return QueryResult::setErrorResult($mixed);
         } else {
-            return new QueryResult(null, $this->link->insert_id, $this->link->affected_rows);
+            return QueryResult::setExecutionResult($this->link->insert_id, $this->link->affected_rows);
         }
     }
 

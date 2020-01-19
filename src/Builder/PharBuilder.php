@@ -21,6 +21,5 @@ class PharBuilder
         $phar = new Phar($file_name);
         $phar->buildFromIterator($this->iterator);
         $phar->setStub($phar->createDefaultStub($stub));
-        echo "done\r\n";
     }
 }

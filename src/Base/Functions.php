@@ -90,12 +90,12 @@ function arrayCount($mixed): int
     }
 }
 
-function msDateNow(): string
+function msDate($format = 'Y-m-d H:i:s.u'): string
 {
-    list($sec, $msec) = explode('.', microtime(true));
-    $msec = str_pad($msec, 4, '0', STR_PAD_RIGHT);
-    $now = date('Y-m-d H:i:s', $sec);
-    return $now . '.' . $msec;
+    list($sec, $usec) = explode('.', microtime(true));
+    $usec = (strlen($usec) < 3) ? str_pad($usec, 3, '0', STR_PAD_RIGHT) : substr($usec, 0, 3);
+    $format = str_replace('u', $usec, $format);
+    return date($format, $sec);
 }
 
 /**

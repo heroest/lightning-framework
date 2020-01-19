@@ -1,95 +1,168 @@
 <?php
+
 namespace Lightning\Http;
 
 use Lightning\Exceptions\HttpException;
+use Lightning\Http\RequestBody;
 use Lightning\Http\RequestResult;
-use React\HttpClient\{Client, Response, Request};
-use React\EventLoop\LoopInterface;
+use React\HttpClient\{Client AS ReactHttpClient, Response, Request};
 use React\Promise\{Deferred, PromiseInterface};
 use React\Socket\Connector;
-use function Lightning\container;
+use function Lightning\{container, loop};
 
 class HttpClient
 {
-    private $client;
-
     public function __construct()
     {
-        $config = container()->get('config');
-        $timeout = $config->get('http_client.timeout', 30);
-        $loop = container()->get('loop');
-        $connector = new Connector($loop, ['timeout' => $timeout]);
-        $this->client = new Client($loop, $connector);
     }
 
-    public function get(string $url, array $params = [], array $headers = []): PromiseInterface
+    /**
+     * Get请求
+     *
+     * @param string $url
+     * @param array $params
+     * @param array $headers
+     * @param float $timeout
+     * @return PromiseInterface
+     */
+    public function get(string $url, array $params = [], array $headers = [], array $options = []): PromiseInterface
     {
         $parts = self::parseUrl($url);
         $url = $parts['url'];
         $params = array_merge($parts['query'], $params);
         if (!empty($params)) {
-            $url .= ('?' . http_build_query($params));
+            $url .= '?' . http_build_query($params);
         }
 
-        $deferred = new Deferred();
-        $result = new RequestResult();
-        $request = $this->client->request('GET', $url, $headers);
-        $result->time_request = microtime(true);
-        $request->on('response', function(Response $response) use ($request, $deferred, $result) {
-            self::handleResponse($request, $response, $result, $deferred);
-        });
-        $request->on('error', function($error) use ($deferred){
-            $deferred->reject($error);
-        });
-        $request->end();
-        return $deferred->promise();
+        $body = new RequestBody();
+        $body->url = $url;
+        $body->method = 'GET';
+        $body->setOptions($options);
+
+        return self::doRequest($body);
     }
 
-    public function post(string $url, array $post_data = [], array $headers = []): PromiseInterface
+    /**
+     * POST请求
+     *
+     * @param string $url
+     * @param array $post_data
+     * @param array $headers
+     * @param float $timeout
+     * @return PromiseInterface
+     */
+    public function post(string $url, array $post_data = [], array $headers = [], $options = []): PromiseInterface
     {
-        $deferred = new Deferred();
-        $result = new RequestResult();
         $post_field = http_build_query($post_data);
-        $post_headers = [
+
+        $body = new RequestBody();
+        $body->url = $url;
+        $body->method = 'POST';
+        $body->postField = $post_field;
+        $body->headers = array_merge([
             'Content-Type' => 'application/x-www-form-urlencoded',
             'Content-Length' => strlen($post_field)
-        ];
-        $request = $this->client->request('POST', $url, array_merge($post_headers, $headers));
-        $result->time_request = microtime(true);
-        $request->on('response', function(Response $response) use ($request, $deferred, $result) {
-            self::handleResponse($request, $response, $result, $deferred);
-        });
-        $request->on('error', function($error) use ($deferred){
-            $deferred->reject($error);
-        });
-        $request->end($post_field);
-        return $deferred->promise();
+        ], $headers);
+        $body->setOptions($options);
+
+        return self::doRequest($body);
     }
 
-    private static function handleResponse(Request $request, Response $response, RequestResult $result, Deferred $deferred)
+    /**
+     * JSON格式的POST请求
+     *
+     * @param string $url
+     * @param array $post_data
+     * @param array $headers
+     * @param float $timeout
+     * @return PromiseInterface
+     */
+    public function jsonPost(string $url, array $post_data = [], array $headers = [], $options = []): PromiseInterface
+    {
+        $post_field = json_encode($post_data);
+
+        $body = new RequestBody();
+        $body->url = $url;
+        $body->method = 'POST';
+        $body->postField = $post_field;
+        $body->headers = array_merge([
+            'Content-Type' => 'application/json',
+            'Content-Length' => strlen($post_field)
+        ], $headers);
+        $body->setOptions($options);
+
+        return self::doRequest($body);
+    }
+
+    private static function createClient($timeout): ReactHttpClient
+    {
+        $loop = loop();
+        $connector = new Connector($loop, ['timeout' => $timeout]);
+        return new ReactHttpClient($loop, $connector);
+    }
+
+    private static function doRequest(RequestBody $body): PromiseInterface
+    {
+        $result = new RequestResult();
+        $deferred = new Deferred();
+
+        $options = $body->getOptions();
+        $method = $body->method;
+        $url = $body->url;
+        $headers = $body->headers;
+        $request = self::createClient($options['connection_timeout'])->request($method, $url, $headers);
+        $deferred = self::setTimeout($deferred, $options['timeout']);
+        $promise = $deferred->promise();
+
+        //stop request after timeout
+        $promise->then(function () use ($request) {
+            $request->close();
+        });
+
+        $request->on('response', function (Response $response) use ($request, $deferred, $result, $body) {
+            $deferred->promise()->then(function () use ($response) {
+                $response->close();
+            });
+
+            $options = $body->getOptions();
+            if ($options['follow_redirects']) {
+                $headers = array_change_key_case($response->getHeaders(), CASE_LOWER);
+                if (!empty($headers['location'])) {
+                    $body->url = $headers['location'];
+                    $deferred->resolve(self::doRequest($body));
+                }
+            }
+            self::handleResponse($request, $response, $result, $deferred);
+        });
+
+        $request->on('error', function ($error) use ($deferred, $result) {
+            $result->error = $error;
+            $deferred->resolve($result);
+        });
+
+        $request->end($body->postField);
+        $result->time_request = microtime(true);
+
+        return $promise;
+    }
+
+    private static function handleResponse(Request $request, Response $response, RequestResult $result, Deferred $deferred): void
     {
         $result->time_response = microtime(true);
         $result->headers = $response->getHeaders();
         $result->code = $response->getCode();
 
-        $skip_codes = container()->get('config')->get('http-client.ignore-content-on-codes');
-        if (is_array($skip_codes) and in_array($result->code, $skip_codes)) {
-            $result->time_end = microtime(true);
-            $request->close();
-            $response->close();
-            $deferred->resolve($result);
-            return;
-        }
-
         $data = '';
         $chunk_count = 0;
-        $response->on('data', function($chunk) use (&$data, &$chunk_count) {
+        $response->on('data', function ($chunk) use (&$data, &$chunk_count) {
             $data .= $chunk;
             $chunk_count++;
         });
-        $response->on('end', function() use (&$data, &$chunk_count, $result, $deferred) {
-            $result->data = $data;
+        $response->on('end', function () use (&$data, &$chunk_count, $request, $response, $result, $deferred) {
+            $request->close();
+            $response->close();
             $result->chunk_count = $chunk_count;
+            $result->data = $data;
             $result->time_end = microtime(true);
             $deferred->resolve($result);
         });
@@ -104,5 +177,20 @@ class HttpClient
         } else {
             return ['url' => $url, 'query' => []];
         }
+    }
+
+    private static function setTimeout(Deferred $deferred, float $timeout): Deferred
+    {
+        $promise = $deferred->promise();
+        $timer = loop()->addTimer($timeout, function () use ($deferred) {
+            $result = new RequestResult();
+            $result->error = new HttpException("请求时间超时");
+            $result->time_end = microtime(true);
+            $deferred->resolve($result);
+        });
+        $promise->then(function () use ($timer) {
+            loop()->cancelTimer($timer);
+        });
+        return $deferred;
     }
 }
