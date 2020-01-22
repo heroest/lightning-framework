@@ -1,8 +1,9 @@
 <?php
 namespace Lightning\Database;
 
-use Lightning\Database\QueryComponent\AbstractComponent;
 use RuntimeException;
+use React\Promise\PromiseInterface;
+use Lightning\Database\QueryComponent\AbstractComponent;
 use Lightning\Database\QueryResolver;
 use function Lightning\container;
 
@@ -259,7 +260,7 @@ class Query
     private static function fetchResultPromise(PromiseInterface $promise)
     {
         return $promise->then(function ($query_result) {
-            return $query_result->result;
+            return $query_result->data;
         }, function ($error) {
             return $error;
         });
