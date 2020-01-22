@@ -138,3 +138,14 @@ function config(): \Lightning\System\Config
 {
     return \Lightning\container()->get('config');
 }
+
+/**
+ * turn backslash(windows) into slash(linux)
+ *
+ * @param string $path
+ * @return string
+ */
+function uxPath(string $path): string
+{
+    return strtr($path, '\\', '/');
+}

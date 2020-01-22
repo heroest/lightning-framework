@@ -5,6 +5,7 @@ use Iterator;
 use ArrayIterator;
 use DirectoryIterator;
 use InvalidArgumentException;
+use function Lightning\uxPath;
 
 class FileCollection
 {
@@ -45,7 +46,7 @@ class FileCollection
                 continue;
             }
 
-            $full = $path . '/' . $sub->getFilename();
+            $full = uxPath($path . '/' . $sub->getFilename());
             if (self::shouldIgnore($full, $pattern)) {
                 continue;
             } elseif ($sub->isFile()) {
@@ -71,4 +72,5 @@ class FileCollection
             return false;
         }
     }
+
 }
