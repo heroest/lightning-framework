@@ -59,7 +59,7 @@ class Container
         }
     }
 
-    public function set(string $name, $mixed, bool $is_singleton = false)
+    public function set(string $name, $mixed, bool $is_core = false)
     {
         if (is_string($mixed) or ($mixed instanceof Closure)) {
             $this->definitions[$name] = $mixed;
@@ -69,8 +69,8 @@ class Container
             throw new InvalidArgumentException(__METHOD__ . ' 2nd parameter expect to string, closure or object');
         }
 
-        if ($is_singleton) {
-            $this->singleton[$name] = true;
+        if ($is_core) {
+            $this->core[$name] = true;
         }
     }
 
@@ -87,7 +87,7 @@ class Container
 
     public function fresh(string $name)
     {
-        if (isset($this->components[$name]) and isset($this->singleton[$name])) {
+        if (isset($this->components[$name]) and isset($this->core[$name])) {
             throw new SystemException("Core Component {$name} has been initialized already");
         } elseif (isset($this->definitions[$name])) {
             return $this->createComponent($name);

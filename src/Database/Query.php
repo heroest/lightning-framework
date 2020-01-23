@@ -1,8 +1,10 @@
 <?php
 namespace Lightning\Database;
 
+use React\Promise\PromiseInterface;
 use Lightning\Database\QueryComponent\AbstractComponent;
-use RuntimeException;
+use Lightning\Database\Connection;
+use Lightning\Exceptions\DatabaseException;
 use Lightning\Database\QueryResolver;
 use function Lightning\container;
 
@@ -60,15 +62,20 @@ class Query
         return $this->fetchMode;
     }
 
+    public function getSql(): string
+    {
+        return $this->sql;
+    }
+
+    public function getParams(): array
+    {
+        return $this->params;
+    }
+
     public function setSql(string $sql)
     {
         $this->sql = $sql;
         return $this;
-    }
-
-    public function getSql(): string
-    {
-        return $this->sql;
     }
 
     public function setParams(array $params)
@@ -77,10 +84,13 @@ class Query
         return $this;
     }
 
-    public function getParams(): array
-    {
-        return $this->params;
-    }
+   public function setFetchMode(string $fetch_mode)
+   {
+        if (!in_array($fetch_mode, Connection::FETCH_MODES)) {
+            throw new DatabaseException("Unknown Fetch Modes: {$fetch_mode}");
+        }
+        $this->fetchMode = $fetch_mode;
+   }
 
 
     public function from(string $table_name)
@@ -156,7 +166,7 @@ class Query
         $this->queryType = self::TYPE_INSERT;
     }
 
-    public function one()
+    public function one(): PromiseInterface
     {
         $this->setDefaultRole('slave');
         $this->queryType = self::TYPE_SELECT;
@@ -166,10 +176,10 @@ class Query
         $this->compile();
 
         $dbm = container()->get('dbm');       
-        return self::fetchResultPromise($dbm->runQuery($this));
+        return self::fetchResultPromise($dbm->execute($this));
     }
 
-    public function all()
+    public function all(): PromiseInterface
     {
         $this->setDefaultRole('slave');
         $this->queryType = self::TYPE_SELECT;
@@ -177,7 +187,7 @@ class Query
         $this->compile();
 
         $dbm = container()->get('dbm');
-        return self::fetchResultPromise($dbm->runQuery($this));
+        return self::fetchResultPromise($dbm->execute($this));
     }
 
     public function compile(bool $rebuild = false): void
@@ -259,7 +269,7 @@ class Query
     private static function fetchResultPromise(PromiseInterface $promise)
     {
         return $promise->then(function ($query_result) {
-            return $query_result->result;
+            return $query_result->data;
         }, function ($error) {
             return $error;
         });

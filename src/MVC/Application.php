@@ -1,10 +1,10 @@
 <?php
+
 namespace Lightning\MVC;
 
-use function Lightning\container;
-use function React\Promise\race;
+use function Lightning\{container, loop, config};
 use Lightning\MVC\Output;
-use React\Promise\{Deferred, PromiseInterface};
+use React\Promise\{PromiseInterface};
 use React\Http\{Server, Response};
 use React\Socket\Server as SocketServer;
 use Psr\Http\Message\ServerRequestInterface;
@@ -34,18 +34,18 @@ class Application extends \Lightning\Base\Application
             $callable = $this->fetchUrl($request->getUri()->getPath());
             $output = new Output();
             call_user_func_array($callable, [$request, $output]);
-            return self::timeout($output->promise());
+            return self::timeout($output);
         } catch (Throwable $e) {
             $code = $e->getCode();
             return new Response(
                 empty($code) ? 400 : $code,
-                ['Content-Type' => 'application/json'], 
+                ['Content-Type' => 'application/json'],
                 json_encode([
-                    'msg' => $e->getMessage(), 
-                    'file' => $e->getFile(), 
+                    'msg' => $e->getMessage(),
+                    'file' => $e->getFile(),
                     'line' => $e->getLine(),
                     'trace' => explode("\n", $e->getTraceAsString())
-                ], JSON_UNESCAPED_UNICODE)
+                ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
             );
         }
     }
@@ -64,7 +64,7 @@ class Application extends \Lightning\Base\Application
         if (!class_exists($controller_name)) {
             throw new RuntimeException("Page not found: {$route}", 404);
         }
-        
+
         if (!$container->has($controller_name)) {
             $container->set($controller_name, $controller_name);
         }
@@ -76,22 +76,17 @@ class Application extends \Lightning\Base\Application
         return [$controller, $action_name];
     }
 
-    private static function timeout(PromiseInterface $promise): PromiseInterface
+    private static function timeout(Output $output): PromiseInterface
     {
-        $config = container()->get('config');
-        $timeout = $config->get('web.timeout', 30);
-        $deferred = new Deferred();
-        $timer = container()->get('loop')->addTimer($timeout, function() use ($deferred) {
-            $deferred->resolve(
-                new Response(
-                    400, 
-                    ['Content-Type' => 'application/json'], 
-                    json_encode(['msg' => "The conneciton is timeout"])
-                ));
+        $timeout = config()->get('web.timeout', 30);
+        $timer = loop()->addTimer($timeout, function () use ($output) {
+            $output->setData(Output::TYPE_JSON, ['msg' => 'The connection is timeout']);
+            $output->setCode(400);
+            $output->send();
         });
-        $promise->then(function() use ($timer) {
-            container()->get('loop')->cancelTimer($timer);
+        return $output->promise()->then(function ($response) use ($timer) {
+            loop()->cancelTimer($timer);
+            return $response;
         });
-        return race([$promise, $deferred->promise()]);
     }
 }

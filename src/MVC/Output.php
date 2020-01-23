@@ -1,8 +1,10 @@
 <?php
+
 namespace Lightning\MVC;
 
 use React\Promise\{Deferred, PromiseInterface};
 use React\Http\Response;
+use function Lightning\await;
 use InvalidArgumentException;
 use Throwable;
 
@@ -18,7 +20,7 @@ class Output
 
     private $deferred;
     private $sent = false;
-    
+
     public function __construct()
     {
         $this->deferred = new Deferred();
@@ -28,7 +30,7 @@ class Output
     {
         $content_type = '';
         switch ($type) {
-            case self::TYPE_TEXT: 
+            case self::TYPE_TEXT:
                 if (!is_string($mixed)) {
                     throw new InvalidArgumentException("2nd parameter expected to be a string when content-type is set to text");
                 }
@@ -36,7 +38,7 @@ class Output
                 $this->data = $mixed;
                 break;
 
-            case self::TYPE_HTML: 
+            case self::TYPE_HTML:
                 if (!is_string($mixed)) {
                     throw new InvalidArgumentException("2nd parameter expected to be a string when content-type is set to html");
                 }
@@ -44,9 +46,9 @@ class Output
                 $this->data = $mixed;
                 break;
 
-            case self::TYPE_JSON: 
-                $content_type = 'application/json'; 
-                $this->data = is_string($mixed) ? $mixed : json_encode($mixed, JSON_UNESCAPED_UNICODE);
+            case self::TYPE_JSON:
+                $content_type = 'application/json';
+                $this->data = is_string($mixed) ? $mixed : json_encode($mixed, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
                 break;
 
             default:
@@ -65,6 +67,11 @@ class Output
         foreach ($headers as $key => $value) {
             $this->setHeader($key, $value);
         }
+    }
+
+    public function setStatusCode(int $code)
+    {
+        $this->code = $code;
     }
 
     public function send()

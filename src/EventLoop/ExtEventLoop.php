@@ -114,11 +114,9 @@ final class ExtEventLoop implements AwaitableLoopInterface
 
         if (isset($this->readEvents[$key])) {
             $this->readEvents[$key]->free();
-            unset(
-                $this->readEvents[$key],
-                $this->readListeners[$key],
-                $this->readRefs[$key]
-            );
+            unset($this->readEvents[$key],
+            $this->readListeners[$key],
+            $this->readRefs[$key]);
         }
     }
 
@@ -128,11 +126,9 @@ final class ExtEventLoop implements AwaitableLoopInterface
 
         if (isset($this->writeEvents[$key])) {
             $this->writeEvents[$key]->free();
-            unset(
-                $this->writeEvents[$key],
-                $this->writeListeners[$key],
-                $this->writeRefs[$key]
-            );
+            unset($this->writeEvents[$key],
+            $this->writeListeners[$key],
+            $this->writeRefs[$key]);
         }
     }
 
@@ -197,10 +193,12 @@ final class ExtEventLoop implements AwaitableLoopInterface
             $flags = EventBase::LOOP_ONCE;
             if (!$this->running or !$this->futureTickQueue->isEmpty()) {
                 $flags |= EventBase::LOOP_NONBLOCK;
-            } elseif ($this->readEvents->isEmpty() 
-                        and $this->writeEvents->isEmpty() 
-                        and !$this->timerEvents->count() 
-                        and $this->signals->isEmpty()) {
+            } elseif (
+                $this->readEvents->isEmpty()
+                and $this->writeEvents->isEmpty()
+                and !$this->timerEvents->count()
+                and $this->signals->isEmpty()
+            ) {
                 break;
             }
             $this->eventBase->loop($flags);
@@ -240,8 +238,7 @@ final class ExtEventLoop implements AwaitableLoopInterface
      */
     private function createTimerCallback()
     {
-        $timers = $this->timerEvents;
-        $this->timerCallback = function ($_, $__, $timer) use ($timers) {
+        $this->timerCallback = function ($_, $__, $timer) {
             $this->timerToTick($timer);
         };
     }
@@ -253,7 +250,7 @@ final class ExtEventLoop implements AwaitableLoopInterface
         }
 
         $this->mutex->attach($timer);
-        $this->futureTick(function() use ($timer) {
+        $this->futureTick(function () use ($timer) {
             \call_user_func($timer->getCallback(), $timer);
             $this->mutex->detach($timer);
             if ((!$timer->isPeriodic()) or (!$this->timerEvents->contains($timer))) {
@@ -271,7 +268,7 @@ final class ExtEventLoop implements AwaitableLoopInterface
      */
     private function createStreamCallback()
     {
-       
+
         $this->streamCallback = function ($stream, $flags) {
             $read = $this->readListeners;
             $write = $this->writeListeners;
@@ -289,7 +286,7 @@ final class ExtEventLoop implements AwaitableLoopInterface
 
     private function streamToTick($callback, $stream)
     {
-        $this->futureTick((function() use ($callback, $stream){
+        $this->futureTick((function () use ($callback, $stream) {
             \call_user_func($callback, $stream);
         })->bindTo(null));
     }

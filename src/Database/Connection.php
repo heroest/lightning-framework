@@ -64,7 +64,7 @@ class Connection
         $this->link->real_escape_string($value);
     }
 
-    public function query(string $sql, string $fetch_mode, array $params = []): PromiseInterface
+    public function query(string $sql, ?array $params = [], string $fetch_mode = 'fetch_row'): PromiseInterface
     {
         if ($this->state !== self::STATE_IDLE) {
             throw new RuntimeException('Connection is not ready for query yet');
