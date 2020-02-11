@@ -72,7 +72,7 @@ final class ExtEventLoop implements AwaitableLoopInterface
 
     public function addReadStream($stream, $listener)
     {
-        $key = (int) $stream;
+        $key = (string) $stream;
         if (isset($this->readListeners[$key])) {
             return;
         }
@@ -91,7 +91,7 @@ final class ExtEventLoop implements AwaitableLoopInterface
 
     public function addWriteStream($stream, $listener)
     {
-        $key = (int) $stream;
+        $key = (string) $stream;
         if (isset($this->writeListeners[$key])) {
             return;
         }
@@ -110,7 +110,7 @@ final class ExtEventLoop implements AwaitableLoopInterface
 
     public function removeReadStream($stream)
     {
-        $key = (int) $stream;
+        $key = (string) $stream;
 
         if (isset($this->readEvents[$key])) {
             $this->readEvents[$key]->free();
@@ -122,7 +122,7 @@ final class ExtEventLoop implements AwaitableLoopInterface
 
     public function removeWriteStream($stream)
     {
-        $key = (int) $stream;
+        $key = (string) $stream;
 
         if (isset($this->writeEvents[$key])) {
             $this->writeEvents[$key]->free();
@@ -270,16 +270,17 @@ final class ExtEventLoop implements AwaitableLoopInterface
     {
 
         $this->streamCallback = function ($stream, $flags) {
-            $read = $this->readListeners;
-            $write = $this->writeListeners;
-            $key = (int) $stream;
+            static $write_count = 0;
+            $key = (string) $stream;
 
-            if (Event::READ === (Event::READ & $flags) and isset($read[$key])) {
-                $this->streamToTick($read[$key], $stream);
+            if (Event::READ === (Event::READ & $flags) and isset($this->readListeners[$key])) {
+                $this->streamToTick($this->readListeners[$key], $stream);
             }
 
-            if (Event::WRITE === (Event::WRITE & $flags) and isset($write[$key])) {
-                $this->streamToTick($write[$key], $stream);
+            if (Event::WRITE === (Event::WRITE & $flags) and isset($this->writeListeners[$key])) {
+                // $write_count++;
+                // echo "+ w {$write_count}\r\n";
+                $this->streamToTick($this->writeListeners[$key], $stream);
             }
         };
     }

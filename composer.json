@@ -3,6 +3,7 @@
     "description": "non-block I/O framework",
     "type": "library",
     "require": {
+        "php": ">7.1",
         "react/event-loop": "^1.1",
         "react/promise": "^2.7",
         "symfony/options-resolver": "^4",

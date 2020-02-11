@@ -11,9 +11,8 @@ class Container
     private static $instance;
     private $definitions = [];
     private $components = [];
-    private $singleton = [];
+    private $core = [];
     private $map = [];
-    private $isDebug = false;
 
     private function __construct()
     {

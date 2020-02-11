@@ -108,25 +108,25 @@ class Query
 
     public function where()
     {
-        $this->wrappedWhere('AND', func_get_arg(0));
+        $this->baseWhere('AND', func_get_arg(0));
         return $this;
     }
 
     public function orWhere()
     {
-        $this->wrappedWhere('OR', func_get_arg(0));
+        $this->baseWhere('OR', func_get_arg(0));
         return $this;
     }
 
     public function exists()
     {
-        $this->wrappedWhere('AND', func_get_arg(0));
+        $this->baseWhere('AND', func_get_arg(0));
         return $this;
     }
 
     public function orExists()
     {
-        $this->wrappedWhere('OR', func_get_arg(0));
+        $this->baseWhere('OR', func_get_arg(0));
         return $this;
     }
 
@@ -190,6 +190,22 @@ class Query
         return self::fetchResultPromise($dbm->execute($this));
     }
 
+    public function execute(string $sql = '', array $params = [], string $fetch_mode = 'fetch_all'): PromiseInterface
+    {
+        if (!empty($sql)) {
+            $this->setSql($sql);
+        }
+        if (!empty($params)) {
+            $this->setParams($params);
+        }
+        if (!empty($fetch_mode)) {
+            $this->setFetchMode($fetch_mode);
+        }
+        $dbm = container()->get('dbm');
+        return self::fetchResultPromise($dbm->execute($this));
+    }
+
+
     public function compile(bool $rebuild = false): void
     {
         if (!$rebuild and !empty($this->sql)) {
@@ -207,6 +223,9 @@ class Query
             case self::TYPE_UPDATE:
                 $components = $this->compileUpdateQuery();
                 break;
+            case self::TYPE_DELETE:
+                $components = $this->compileDeleteQuery();
+            break;
         }
 
         $compiled = [];
@@ -230,7 +249,7 @@ class Query
         }
     }
     
-    private function wrappedWhere(string $word, $params): void
+    private function baseWhere(string $word, $params): void
     {
         if (0 < count($this->where)) {
             $this->where[] = $word;
@@ -264,6 +283,21 @@ class Query
         }
         
         return $components;
+    }
+
+    private function compileUpdateQuery()
+    {
+
+    }
+
+    private function compileInsertQuery()
+    {
+
+    }
+
+    public function compileDeleteQuery()
+    {
+
     }
 
     private static function fetchResultPromise(PromiseInterface $promise)

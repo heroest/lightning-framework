@@ -5,7 +5,7 @@ namespace Lightning\Http;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 use function Lightning\config;
 
-class RequestBody
+class Payload
 {
     public $method;
     public $url;

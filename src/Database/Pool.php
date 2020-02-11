@@ -1,13 +1,15 @@
-<?php 
+<?php
+
 namespace Lightning\Database;
 
-use Lightning\Database\Connection;
-use function Lightning\container;
-use function Lightning\await;
+use Generator;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 use React\Promise\{Deferred, PromiseInterface};
 use function React\Promise\resolve;
+use Lightning\Database\Connection;
 use Lightning\Exceptions\DatabaseException;
+use function Lightning\{container, await, config};
+
 
 class Pool
 {
@@ -17,6 +19,7 @@ class Pool
     private $masterBench = [];
     private $slave = [];
     private $slaveBench = [];
+
     private $waitingList = [];
     private $waitingListCount = 0;
     private $waitingListBlock = null;
@@ -44,8 +47,7 @@ class Pool
         if ($connection = $this->doGetConnection($connection_name, $role)) {
             return resolve($connection);
         } else {
-            $config = container()->get('config');
-            $max_limit = $config->get('database.waiting_list_limit', 200);
+            $max_limit = config()->get('database.connection_waiting_list_size', 200);
             if ($this->waitingListCount > $max_limit) {
                 $this->waitingListBlockWait();
             }
@@ -62,8 +64,7 @@ class Pool
 
     private function bootstrap()
     {
-        $config = container()->get('config');
-        foreach ($config->get('database.connections') as $name => $conf) {
+        foreach (config()->get('database.connections') as $name => $conf) {
             $this->initialize($name, $conf);
         }
         $this->registerWaitingListResolver();
@@ -72,10 +73,7 @@ class Pool
 
     private function doGetConnection($connection_name, $role)
     {
-        $index_map = range(0, count($this->$role[$connection_name]) - 1);
-        shuffle($index_map);
-        foreach ($index_map as $index) {
-            $connection = $this->$role[$connection_name][$index];
+        foreach (self::randomIterator($this->$role[$connection_name]) as $connection) {
             if ($connection->getState() === Connection::STATE_IDLE) {
                 return $connection;
             } elseif (($connection->getState() === Connection::STATE_CLOSE) and $connection->open()) {
@@ -84,23 +82,20 @@ class Pool
         }
 
         $bench = "{$role}Bench";
-        if (empty($this->$bench[$connection_name])) {
+        if (!isset($this->$bench[$connection_name])) {
             return null;
         }
-        $index_map = range(0, count($this->$bench[$connection_name]) - 1);
-        shuffle($index_map);
-        $connection_backup = null;
-        foreach ($index_map as $index) {
-            $connection = $this->$bench[$connection_name][$index];
+        $backup = null;
+        foreach (self::randomIterator($this->$bench[$connection_name]) as $connection) {
             if ($connection->getState() === Connection::STATE_IDLE) {
                 return $connection;
             } elseif (($connection->getState() === Connection::STATE_CLOSE)) {
                 //pick a closed connection if no other idle connection
-                $connection_backup = $connection;
+                $backup = $connection;
             }
         }
-        if (($connection_backup !== null) and $connection_backup->open()) {
-            return $connection_backup;
+        if ((null !== $backup) and $backup->open()) {
+            return $backup;
         }
         return null;
     }
@@ -110,17 +105,18 @@ class Pool
         if ($this->waitingListBlock === null) {
             $this->waitingListBlock = new Deferred();
         }
-        await($this->waitingListBlock->promise(), container()->get('loop'));
+        await($this->waitingListBlock->promise());
         $this->waitingListBlock = null;
     }
 
     private function registerWaitingListResolver()
     {
         $event_name = Connection::eventName(Connection::ACTION_STATE_CHANGED, Connection::STATE_IDLE);
-        container()->get('event-manager')->on($event_name, function($event) {
+        container()->get('event-manager')->on($event_name, function ($event) {
             if (empty($this->waitingList)) {
                 return;
             }
+
             $data = $event->data;
             $key = "{$data['connection_name']}:{$data['role']}";
             if (isset($this->waitingList[$key])) {
@@ -136,8 +132,7 @@ class Pool
             if ($this->waitingListBlock === null) {
                 return;
             }
-            $config = container()->get('config');
-            $max_limit = $config->get('database.waiting_list_limit', 1000);
+            $max_limit = config()->get('database.connection_waiting_list_size', 200);
             if ($this->waitingListCount < $max_limit) {
                 $this->waitingListBlock->resolve(true);
             }
@@ -147,37 +142,37 @@ class Pool
     private function registerConnectionWatcher()
     {
         container()
-        ->get('loop')
-        ->addPeriodicTimer(30, function($timer) {
-            $live_count = 0;
-            foreach (['master', 'slave'] as $role) {
-                //keep connection alive
-                foreach ($this->$role as $name => $list) {
-                    foreach ($list as $connection) {
-                        if (($connection->getState() === Connection::STATE_IDLE) and ($connection->ping() == false)) {
-                            $connection->open();
-                        }
+            ->get('loop')
+            ->addPeriodicTimer(30, function ($timer) {
+                $live_count = 0;
+                foreach (['master', 'slave'] as $role) {
+                    //keep connection alive
+                    foreach ($this->$role as $name => $list) {
+                        foreach ($list as $connection) {
+                            if (($connection->getState() === Connection::STATE_IDLE) and ($connection->ping() == false)) {
+                                $connection->open();
+                            }
 
-                        if ($connection->getState() >= Connection::STATE_IDLE) {
-                            $live_count++;
+                            if ($connection->getState() >= Connection::STATE_IDLE) {
+                                $live_count++;
+                            }
+                        }
+                    }
+
+                    //stop connection if being idle for more than 30 sec
+                    $close_count = 0;
+                    $bench = "{$role}Bench";
+                    foreach ($this->$bench as $name => $list) {
+                        foreach ($list as $connection) {
+                            if (($connection->getState() === Connection::STATE_IDLE) and ($connection->getStateDuration() >= 30)) {
+                                $connection->close();
+                                $close_count++;
+                            }
                         }
                     }
                 }
-
-                //stop connection if being idle for more than 30 sec
-                $close_count = 0;
-                $bench = "{$role}Bench";
-                foreach ($this->$bench as $name => $list) {
-                    foreach ($list as $connection) {
-                        if (($connection->getState() === Connection::STATE_IDLE) and ($connection->getStateDuration() >= 30)) {
-                            $connection->close();
-                            $close_count++;
-                        }
-                    }
-                }
-            }
-            echo "live: {$live_count}, closed: {$close_count}\r\n";
-        });
+                echo "live: {$live_count}, closed: {$close_count}\r\n";
+            });
     }
 
     private function initialize($name, $conf)
@@ -218,5 +213,14 @@ class Pool
         $resolver->setAllowedTypes('num_connection', 'int');
         $resolver->setAllowedTypes('max_num_connection', 'int');
         return $resolver;
+    }
+
+    private static function randomIterator(array $list): Generator
+    {
+        $index_map = range(0, count($list) - 1);
+        shuffle($index_map);
+        foreach ($index_map as $index) {
+            yield $list[$index];
+        }
     }
 }

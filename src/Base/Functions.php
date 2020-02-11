@@ -1,4 +1,5 @@
 <?php
+
 namespace Lightning;
 
 /**
@@ -8,35 +9,28 @@ namespace Lightning;
  * @param StreamSelectLoop|null $loop
  * @return mixed
  */
-function await(\React\Promise\PromiseInterface $promise, \Lightning\Base\AwaitableLoopInterface $loop = null)
+function await(\React\Promise\PromiseInterface $promise, ?\Lightning\Base\AwaitableLoopInterface $loop = null)
 {
     if ($loop === null) {
         $loop = \lightning\loop();
     }
 
     $nested = clone $loop;
+    $resolved = false;
     $result = null;
-    $promise->then(
-        function($value) use (&$nested, &$result) {
-            $result = $value;
-            $nested->stop();
-            unset($nested);
-            return $value;
-        },
-        function($error) use (&$nested, &$result) {
-            $result = $error;
-            $nested->stop();
-            unset($nested);
-            return $error;
-        }
-    );
-    
-    $nested->run();
-    if ($result instanceof \Throwable) {
-        throw $result;
-    } else {
-        return $result;
+    $callback = function ($value) use (&$nested, &$result, &$resolved) {
+        $resolved = true;
+        $result = $value;
+        $nested->stop();
+        unset($nested);
+        return $value;
+    };
+    $promise->then($callback, $callback);
+
+    if (!$resolved) {
+        $nested->run();
     }
+    return $result;
 }
 
 /**

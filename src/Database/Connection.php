@@ -6,7 +6,7 @@ use mysqli;
 use mysqli_result;
 use Throwable;
 use RuntimeException;
-use Lightning\Database\QueryComponent\Expression;
+use Lightning\Database\Expression;
 use Lightning\Database\QueryResult;
 use function LIghtning\container;
 use React\Promise\{Deferred, PromiseInterface};

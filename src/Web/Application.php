@@ -1,9 +1,9 @@
 <?php
 
-namespace Lightning\MVC;
+namespace Lightning\Web;
 
 use function Lightning\{container, loop, config};
-use Lightning\MVC\Output;
+use Lightning\Web\Output;
 use React\Promise\{PromiseInterface};
 use React\Http\{Server, Response};
 use React\Socket\Server as SocketServer;
@@ -62,7 +62,7 @@ class Application extends \Lightning\Base\Application
 
         $container = container();
         if (!class_exists($controller_name)) {
-            throw new RuntimeException("Page not found: {$route}", 404);
+            throw new RuntimeException("{$route} - Controller not found: {$controller_name}", 404);
         }
 
         if (!$container->has($controller_name)) {
@@ -71,7 +71,7 @@ class Application extends \Lightning\Base\Application
         $controller = $container->get($controller_name);
 
         if (!method_exists($controller, $action_name)) {
-            throw new RuntimeException("Page not found: {$route}", 404);
+            throw new RuntimeException("{$route} - Action not found: {$action_name}", 404);
         }
         return [$controller, $action_name];
     }
@@ -81,7 +81,7 @@ class Application extends \Lightning\Base\Application
         $timeout = config()->get('web.timeout', 30);
         $timer = loop()->addTimer($timeout, function () use ($output) {
             $output->setData(Output::TYPE_JSON, ['msg' => 'The connection is timeout']);
-            $output->setCode(400);
+            $output->setStatusCode(400);
             $output->send();
         });
         return $output->promise()->then(function ($response) use ($timer) {

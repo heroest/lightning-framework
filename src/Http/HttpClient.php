@@ -3,7 +3,7 @@
 namespace Lightning\Http;
 
 use Lightning\Exceptions\HttpException;
-use Lightning\Http\RequestBody;
+use Lightning\Http\Payload;
 use Lightning\Http\RequestResult;
 use React\HttpClient\{Client AS ReactHttpClient, Response, Request};
 use React\Promise\{Deferred, PromiseInterface};
@@ -34,12 +34,12 @@ class HttpClient
             $url .= '?' . http_build_query($params);
         }
 
-        $body = new RequestBody();
-        $body->url = $url;
-        $body->method = 'GET';
-        $body->setOptions($options);
+        $payload = new Payload();
+        $payload->url = $url;
+        $payload->method = 'GET';
+        $payload->setOptions($options);
 
-        return self::doRequest($body);
+        return self::doRequest($payload);
     }
 
     /**
@@ -55,17 +55,17 @@ class HttpClient
     {
         $post_field = http_build_query($post_data);
 
-        $body = new RequestBody();
-        $body->url = $url;
-        $body->method = 'POST';
-        $body->postField = $post_field;
-        $body->headers = array_merge([
+        $payload = new Payload();
+        $payload->url = $url;
+        $payload->method = 'POST';
+        $payload->postField = $post_field;
+        $payload->headers = array_merge([
             'Content-Type' => 'application/x-www-form-urlencoded',
             'Content-Length' => strlen($post_field)
         ], $headers);
-        $body->setOptions($options);
+        $payload->setOptions($options);
 
-        return self::doRequest($body);
+        return self::doRequest($payload);
     }
 
     /**
@@ -81,17 +81,17 @@ class HttpClient
     {
         $post_field = json_encode($post_data);
 
-        $body = new RequestBody();
-        $body->url = $url;
-        $body->method = 'POST';
-        $body->postField = $post_field;
-        $body->headers = array_merge([
+        $payload = new Payload();
+        $payload->url = $url;
+        $payload->method = 'POST';
+        $payload->postField = $post_field;
+        $payload->headers = array_merge([
             'Content-Type' => 'application/json',
             'Content-Length' => strlen($post_field)
         ], $headers);
-        $body->setOptions($options);
+        $payload->setOptions($options);
 
-        return self::doRequest($body);
+        return self::doRequest($payload);
     }
 
     private static function createClient($timeout): ReactHttpClient
@@ -101,15 +101,16 @@ class HttpClient
         return new ReactHttpClient($loop, $connector);
     }
 
-    private static function doRequest(RequestBody $body): PromiseInterface
+    private static function doRequest(Payload $payload): PromiseInterface
     {
         $result = new RequestResult();
         $deferred = new Deferred();
 
-        $options = $body->getOptions();
-        $method = $body->method;
-        $url = $body->url;
-        $headers = $body->headers;
+        $options = $payload->getOptions();
+        $method = $payload->method;
+        $url = $payload->url;
+        $headers = $payload->headers;
+        $result->url = $url;
         $request = self::createClient($options['connection_timeout'])->request($method, $url, $headers);
         $deferred = self::setTimeout($deferred, $options['timeout']);
         $promise = $deferred->promise();
@@ -119,17 +120,20 @@ class HttpClient
             $request->close();
         });
 
-        $request->on('response', function (Response $response) use ($request, $deferred, $result, $body) {
+        $request->on('response', function (Response $response) use ($request, $deferred, $result, $payload) {
             $deferred->promise()->then(function () use ($response) {
                 $response->close();
             });
 
-            $options = $body->getOptions();
-            if ($options['follow_redirects']) {
+            $options = $payload->getOptions();
+            if (!empty($options['follow_redirects'])) {
                 $headers = array_change_key_case($response->getHeaders(), CASE_LOWER);
                 if (!empty($headers['location'])) {
-                    $body->url = $headers['location'];
-                    $deferred->resolve(self::doRequest($body));
+                    $response->close();
+                    $request->close();
+                    $payload->url = $headers['location'];
+                    $deferred->resolve(self::doRequest($payload));
+                    return;
                 }
             }
             self::handleResponse($request, $response, $result, $deferred);
@@ -140,7 +144,7 @@ class HttpClient
             $deferred->resolve($result);
         });
 
-        $request->end($body->postField);
+        $request->end($payload->postField);
         $result->time_request = microtime(true);
 
         return $promise;

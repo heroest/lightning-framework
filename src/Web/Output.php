@@ -1,12 +1,10 @@
 <?php
 
-namespace Lightning\MVC;
+namespace Lightning\Web;
 
 use React\Promise\{Deferred, PromiseInterface};
 use React\Http\Response;
-use function Lightning\await;
 use InvalidArgumentException;
-use Throwable;
 
 class Output
 {
