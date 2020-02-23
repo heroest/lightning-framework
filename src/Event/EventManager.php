@@ -1,7 +1,9 @@
 <?php
 namespace Lightning\Event;
 
-use Symfony\Component\EventDispatcher\{EventDispatcher, Event};
+use Generator;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Contracts\EventDispatcher\Event;
 use Throwable;
 
 class EventManager
@@ -13,9 +15,9 @@ class EventManager
         $this->dispatcher = new EventDispatcher();
     }
 
-    public function on(string $event_name, callable $callback): self
+    public function on(string $event_name, callable $callback, int $priority = 0): self
     {
-        $this->dispatcher->addListener($event_name, $callback);
+        $this->dispatcher->addListener($event_name, $callback, $priority);
         return $this;
     }
 
@@ -42,7 +44,7 @@ class EventManager
         }
     }
 
-    private static function fetchEventName(string $event_name): \Generator
+    private static function fetchEventName(string $event_name): Generator
     {
         if (false !== stripos($event_name, '*')) {
             yield $event_name;

@@ -2,13 +2,14 @@
 
 namespace Lightning\Database;
 
+use SplObjectStorage;
 use Generator;
 use Symfony\Component\OptionsResolver\OptionsResolver;
 use React\Promise\{Deferred, PromiseInterface};
 use function React\Promise\resolve;
 use Lightning\Database\Connection;
 use Lightning\Exceptions\DatabaseException;
-use function Lightning\{container, await, config};
+use function Lightning\{container, await, clearTimer, config, watch};
 
 
 class Pool
@@ -29,7 +30,6 @@ class Pool
         if (!extension_loaded('mysqli')) {
             throw new DatabaseException("module mysqli is required");
         }
-
         $this->bootstrap();
     }
 
@@ -47,19 +47,41 @@ class Pool
         if ($connection = $this->doGetConnection($connection_name, $role)) {
             return resolve($connection);
         } else {
-            $max_limit = config()->get('database.connection_waiting_list_size', 200);
-            if ($this->waitingListCount > $max_limit) {
-                $this->waitingListBlockWait();
-            }
-            $deferred = new Deferred();
-            $key = "{$connection_name}:{$role}";
-            if (!isset($this->waitingList[$key])) {
-                $this->waitingList[$key] = [];
-            }
-            $this->waitingList[$key][] = $deferred;
-            $this->waitingListCount++;
-            return $deferred->promise();
+            return $this->getPendingConnection($connection_name, $role);
         }
+    }
+
+
+    private function getPendingConnection(string $connection_name, string $role): PromiseInterface
+    {
+        $max_limit = config()->get('database.connection_waiting_list_size', 200);
+        if ($this->waitingListCount > $max_limit) {
+            $this->waitingListBlockWait();
+        }
+
+        $deferred = null;
+        $key = "{$connection_name}:{$role}";
+        if (!isset($this->waitingList[$key])) {
+            $this->waitingList[$key] = new SplObjectStorage();
+        }
+
+        $waiting_seconds = config()->get('database.connection_waiting_time', 15);
+        $canceller = function () use (&$deferred, $key, $waiting_seconds) {
+            if ($this->waitingList[$key]->contains($deferred)) {
+                $this->waitingList[$key]->detach($deferred);
+                $this->waitingListCount--;
+                $this->releaseBlockWait();
+                throw new DatabaseException("Unable to get database connection after {$waiting_seconds} seconds");
+            }
+        };
+
+        $deferred = new Deferred($canceller);
+        $this->waitingList[$key]->attach($deferred);
+        $this->waitingListCount++;
+
+        $promise = $deferred->promise();
+        watch($promise, $waiting_seconds);
+        return $promise;
     }
 
     private function bootstrap()
@@ -67,6 +89,7 @@ class Pool
         foreach (config()->get('database.connections') as $name => $conf) {
             $this->initialize($name, $conf);
         }
+
         $this->registerWaitingListResolver();
         $this->registerConnectionWatcher();
     }
@@ -85,17 +108,12 @@ class Pool
         if (!isset($this->$bench[$connection_name])) {
             return null;
         }
-        $backup = null;
         foreach (self::randomIterator($this->$bench[$connection_name]) as $connection) {
             if ($connection->getState() === Connection::STATE_IDLE) {
                 return $connection;
-            } elseif (($connection->getState() === Connection::STATE_CLOSE)) {
-                //pick a closed connection if no other idle connection
-                $backup = $connection;
+            } elseif (($connection->getState() === Connection::STATE_CLOSE) and $connection->open()) {
+                return $connection;
             }
-        }
-        if ((null !== $backup) and $backup->open()) {
-            return $backup;
         }
         return null;
     }
@@ -105,38 +123,56 @@ class Pool
         if ($this->waitingListBlock === null) {
             $this->waitingListBlock = new Deferred();
         }
-        await($this->waitingListBlock->promise());
+
+        await($this->waitingListBlock->promise(), 60);
         $this->waitingListBlock = null;
     }
 
     private function registerWaitingListResolver()
     {
-        $event_name = Connection::eventName(Connection::ACTION_STATE_CHANGED, Connection::STATE_IDLE);
-        container()->get('event-manager')->on($event_name, function ($event) {
-            if (empty($this->waitingList)) {
+        $event_on_idle = Connection::eventName(Connection::ACTION_STATE_CHANGED, Connection::STATE_IDLE);
+        $event_on_close = Connection::eventName(Connection::ACTION_STATE_CHANGED, Connection::STATE_CLOSE);
+        $em = container()->get('event-manager');
+        $callback = function ($event) {
+            if ($this->waitingListCount == 0) {
                 return;
             }
 
             $data = $event->data;
             $key = "{$data['connection_name']}:{$data['role']}";
-            if (isset($this->waitingList[$key])) {
-                $deferred = array_shift($this->waitingList[$key]);
-                if (empty($this->waitingList[$key])) {
-                    unset($this->waitingList[$key]);
-                }
-                $this->waitingListCount--;
-                $deferred->resolve($data['connection']);
-            }
-
-            //resolve block-wait
-            if ($this->waitingListBlock === null) {
+            if (!isset($this->waitingList[$key]) or (0 === $this->waitingList[$key]->count())) {
                 return;
             }
+            $event->stopPropagation();
+
+            $connection = $data['connection'];
+            if (
+                Connection::STATE_CLOSE === $connection->getDuration()
+                and false === $connection->open
+            ) {
+                return;
+            }
+            if (!$this->waitingList[$key]->valid()) {
+                $this->waitingList[$key]->rewind();
+            }
+            $deferred = $this->waitingList[$key]->current();
+            $this->waitingList[$key]->detach($deferred);
+            $deferred->resolve($connection);
+
+            $this->releaseBlockWait();
+        };
+        $em->on($event_on_idle, $callback);
+        $em->on($event_on_close, $callback);
+    }
+
+    private function releaseBlockWait()
+    {
+        if (null !== $this->waitingListBlock) {
             $max_limit = config()->get('database.connection_waiting_list_size', 200);
             if ($this->waitingListCount < $max_limit) {
                 $this->waitingListBlock->resolve(true);
             }
-        });
+        }
     }
 
     private function registerConnectionWatcher()
@@ -160,18 +196,20 @@ class Pool
                     }
 
                     //stop connection if being idle for more than 30 sec
-                    $close_count = 0;
                     $bench = "{$role}Bench";
                     foreach ($this->$bench as $name => $list) {
                         foreach ($list as $connection) {
-                            if (($connection->getState() === Connection::STATE_IDLE) and ($connection->getStateDuration() >= 30)) {
-                                $connection->close();
-                                $close_count++;
+                            if ($connection->getState() === Connection::STATE_IDLE) {
+                                if ($connection->getStateDuration() >= 30) {
+                                    $connection->close();
+                                } else {
+                                    $live_count++;
+                                }
                             }
                         }
                     }
                 }
-                echo "live: {$live_count}, closed: {$close_count}\r\n";
+                echo "live: {$live_count}\r\n";
             });
     }
 
@@ -181,7 +219,7 @@ class Pool
         $this->slave[$name] = [];
         $this->masterBench[$name] = [];
         $this->slaveBench[$name] = [];
-        $resolver = $this->getOptionResolver();
+        $resolver = self::getOptionResolver();
 
         foreach ($conf as $row) {
             $option = $resolver->resolve($row);
@@ -200,7 +238,7 @@ class Pool
         }
     }
 
-    private function getOptionResolver(): OptionsResolver
+    private static function getOptionResolver(): OptionsResolver
     {
         $resolver = new OptionsResolver();
         $resolver->setDefaults([

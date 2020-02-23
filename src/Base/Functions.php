@@ -6,14 +6,11 @@ namespace Lightning;
  * Block-wait for promise to resolve or reject
  *
  * @param PromiseInterface $promise
- * @param StreamSelectLoop|null $loop
  * @return mixed
  */
-function await(\React\Promise\PromiseInterface $promise, ?\Lightning\Base\AwaitableLoopInterface $loop = null)
+function await(\React\Promise\PromiseInterface $promise)
 {
-    if ($loop === null) {
-        $loop = \lightning\loop();
-    }
+    $loop = \lightning\loop();
 
     $nested = clone $loop;
     $resolved = false;
@@ -23,13 +20,39 @@ function await(\React\Promise\PromiseInterface $promise, ?\Lightning\Base\Awaita
         $result = $value;
         $nested->stop();
         unset($nested);
-        return $value;
+
+        if ($value instanceof \Throwable) {
+            throw $value;
+        } else {
+            return $value;
+        }
     };
     $promise->then($callback, $callback);
 
     if (!$resolved) {
         $nested->run();
     }
+    return $result;
+}
+
+/**
+ * Extract result from promise
+ *
+ * @param \React\Promise\PromiseInterface $promise
+ * @return mixed
+ */
+function extractPromise(\React\Promise\PromiseInterface $promise)
+{
+    $result = null;
+    $callback = function ($value) use (&$result) {
+        $result = $value;
+        if ($value instanceof \Throwable) {
+            throw $value;
+        } else {
+            return $value;
+        }
+    };
+    $promise->then($callback, $callback);
     return $result;
 }
 
@@ -124,6 +147,41 @@ function loop(): \Lightning\Base\AwaitableLoopInterface
 }
 
 /**
+ * JS-Style setTimeout
+ *
+ * @param callable $callback
+ * @param float $timeout
+ * @return \React\EventLoop\TimerInterface
+ */
+function setTimeout(callable $callback, float $timeout): \React\EventLoop\TimerInterface
+{
+    return \Lightning\loop()->addTimer($timeout, $callback);
+}
+
+/**
+ * JS-Style setInterval
+ *
+ * @param callable $callback
+ * @param float $interval
+ * @return \React\EventLoop\TimerInterface
+ */
+function setInterval(callable $callback, float $interval): \React\EventLoop\TimerInterface
+{
+    return \Lightning\loop()->addPeriodicTimer($interval, $callback);
+}
+
+/**
+ * Cancel Timer genearted by setInterval() or setTimeout()
+ *
+ * @param \React\EventLoop\TimerInterface $timer
+ * @return void
+ */
+function clearTimer(\React\EventLoop\TimerInterface $timer): void
+{
+    \Lightning\loop()->cancelTimer($timer);
+}
+
+/**
  * container: get config
  *
  * @return \Lightning\System\Config
@@ -142,4 +200,27 @@ function config(): \Lightning\System\Config
 function uxPath(string $path): string
 {
     return strtr($path, '\\', '/');
+}
+
+/**
+ * Promise Time watcher
+ *
+ * @param \React\Promise\PromiseInterface $promise
+ * @param float $timeout
+ * @return void
+ */
+function watch(\React\Promise\PromiseInterface $promise, float $timeout): void
+{
+    $timer = \Lightning\setTimeout(function() use ($promise) {
+        $promise->cancel();
+    }, $timeout);
+    $callback = function ($value) use ($timer) {
+        \Lightning\clearTimer($timer);
+        if ($value instanceof \Throwable) {
+            throw $value;
+        } else {
+            return $value;
+        }
+    };
+    $promise->then($callback, $callback);
 }

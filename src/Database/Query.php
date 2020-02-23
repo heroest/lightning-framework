@@ -1,12 +1,13 @@
 <?php
+
 namespace Lightning\Database;
 
 use React\Promise\PromiseInterface;
 use Lightning\Database\QueryComponent\AbstractComponent;
-use Lightning\Database\Connection;
+use Lightning\Database\{Connection, Transaction};
 use Lightning\Exceptions\DatabaseException;
 use Lightning\Database\QueryResolver;
-use function Lightning\container;
+use function Lightning\{container, config};
 
 class Query
 {
@@ -20,6 +21,8 @@ class Query
     private $fetchMode = 'fetch_all';
     private $connectionName = '';
     private $connectionRole = '';
+    private $transaction = null;
+    private $maxExectionTime = 0;
 
     private $sql = '';
     private $params = [];
@@ -35,16 +38,33 @@ class Query
     private $take = 0;
     private $orderBy = '';
 
-    public function __construct(string $connection_name, string $connection_role = '')
+    private function __construct(string $connection_name = '', string $connection_role = '', Transaction $transaction = null)
     {
-        $this->connectionName = $connection_name;
-        $this->connectionRole = $connection_role;
+        if (null !== $transaction) {
+            $this->transaction = $transaction;
+            $this->connectionName = $transaction->getConnectionName();
+            $this->connectionRole = 'master';
+        } else {
+            $this->connectionName = $connection_name;
+            $this->connectionRole = $connection_role;
+        }
         $this->resolver = new QueryResolver();
+        $this->maxExectionTime = config()->get('database.max_exection_time', 300);
     }
 
-    public static function connection(string $connection_name, string $connection_role = '')
+    public static function useConnection(string $connection_name, string $connection_role = ''): self
     {
         return new self($connection_name, $connection_role);
+    }
+
+    public static function useTransaction(Transaction $transaction): self
+    {
+        return new self('', '', $transaction);
+    }
+
+    public function inTransaction()
+    {
+        return $this->transaction !== null;
     }
 
     public function getConnectionName()
@@ -55,6 +75,11 @@ class Query
     public function getConnectionRole()
     {
         return $this->connectionRole;
+    }
+
+    public function getTransaction()
+    {
+        return $this->transaction;
     }
 
     public function getFetchMode()
@@ -72,6 +97,11 @@ class Query
         return $this->params;
     }
 
+    public function getMaxExecutionTime(): float
+    {
+        return $this->maxExectionTime;
+    }
+
     public function setSql(string $sql)
     {
         $this->sql = $sql;
@@ -84,14 +114,20 @@ class Query
         return $this;
     }
 
-   public function setFetchMode(string $fetch_mode)
-   {
+    public function setFetchMode(string $fetch_mode)
+    {
         if (!in_array($fetch_mode, Connection::FETCH_MODES)) {
             throw new DatabaseException("Unknown Fetch Modes: {$fetch_mode}");
         }
         $this->fetchMode = $fetch_mode;
-   }
+        return $this;
+    }
 
+    public function setMaxExecutionTime(float $time)
+    {
+        $this->maxExecutionTime = $time;
+        return $this;
+    }
 
     public function from(string $table_name)
     {
@@ -132,7 +168,6 @@ class Query
 
     public function join()
     {
-
     }
 
     public function limit()
@@ -151,7 +186,6 @@ class Query
 
     public function groupBy()
     {
-
     }
 
     public function update()
@@ -175,7 +209,7 @@ class Query
         $this->fetchMode = 'fetch_row';
         $this->compile();
 
-        $dbm = container()->get('dbm');       
+        $dbm = container()->get('dbm');
         return self::fetchResultPromise($dbm->execute($this));
     }
 
@@ -202,9 +236,8 @@ class Query
             $this->setFetchMode($fetch_mode);
         }
         $dbm = container()->get('dbm');
-        return self::fetchResultPromise($dbm->execute($this));
+        return $dbm->execute($this);
     }
-
 
     public function compile(bool $rebuild = false): void
     {
@@ -225,7 +258,7 @@ class Query
                 break;
             case self::TYPE_DELETE:
                 $components = $this->compileDeleteQuery();
-            break;
+                break;
         }
 
         $compiled = [];
@@ -248,7 +281,7 @@ class Query
             $this->connectionRole = $role_name;
         }
     }
-    
+
     private function baseWhere(string $word, $params): void
     {
         if (0 < count($this->where)) {
@@ -274,30 +307,25 @@ class Query
             $components[] = "ORDER BY {$this->orderBy}";
         }
 
-        if (!empty($this->take)) {
-            if (empty($this->offset)) {
-                $components[] = "LIMIT {$this->take}";
-            } else {
-                $components[] = "LIMIT {$this->offset}, {$this->take}";
-            }
+        if ($this->take > 0) {
+            $components[] = $this->offset === 0
+                ? "LIMIT {$this->take}"
+                : "LIMIT {$this->offset}, {$this->take}";
         }
-        
+
         return $components;
     }
 
     private function compileUpdateQuery()
     {
-
     }
 
     private function compileInsertQuery()
     {
-
     }
 
     public function compileDeleteQuery()
     {
-
     }
 
     private static function fetchResultPromise(PromiseInterface $promise)
@@ -305,7 +333,7 @@ class Query
         return $promise->then(function ($query_result) {
             return $query_result->data;
         }, function ($error) {
-            return $error;
+            throw $error;
         });
     }
 }

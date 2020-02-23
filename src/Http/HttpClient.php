@@ -37,6 +37,7 @@ class HttpClient
         $payload = new Payload();
         $payload->url = $url;
         $payload->method = 'GET';
+        $payload->headers = $headers;
         $payload->setOptions($options);
 
         return self::doRequest($payload);
