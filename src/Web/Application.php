@@ -2,8 +2,9 @@
 
 namespace Lightning\Web;
 
-use function Lightning\{container, loop, config};
-use Lightning\Web\Output;
+use function Lightning\{container, config, setTimeout, clearTimer};
+use Lightning\Web\{Input, Output};
+use Lightning\Base\Application AS BaseApplication;
 use React\Promise\{PromiseInterface};
 use React\Http\{Server, Response};
 use React\Socket\Server as SocketServer;
@@ -12,7 +13,7 @@ use RuntimeException;
 use Throwable;
 
 
-class Application extends \Lightning\Base\Application
+class Application extends BaseApplication
 {
     public function __construct()
     {
@@ -33,7 +34,7 @@ class Application extends \Lightning\Base\Application
         try {
             $callable = $this->fetchUrl($request->getUri()->getPath());
             $output = new Output();
-            call_user_func_array($callable, [$request, $output]);
+            call_user_func_array($callable, [Input::parseRequest($request), $output]);
             return self::timeout($output);
         } catch (Throwable $e) {
             $code = $e->getCode();
@@ -60,15 +61,14 @@ class Application extends \Lightning\Base\Application
         }
         list($controller_name, $action_name) = self::fetchControllerAction($route);
 
-        $container = container();
         if (!class_exists($controller_name)) {
             throw new RuntimeException("{$route} - Controller not found: {$controller_name}", 404);
         }
 
-        if (!$container->has($controller_name)) {
-            $container->set($controller_name, $controller_name);
+        if (false === container()->has($controller_name)) {
+            container()->set($controller_name, $controller_name);
         }
-        $controller = $container->get($controller_name);
+        $controller = container()->get($controller_name);
 
         if (!method_exists($controller, $action_name)) {
             throw new RuntimeException("{$route} - Action not found: {$action_name}", 404);
@@ -78,14 +78,13 @@ class Application extends \Lightning\Base\Application
 
     private static function timeout(Output $output): PromiseInterface
     {
-        $timeout = config()->get('web.timeout', 30);
-        $timer = loop()->addTimer($timeout, function () use ($output) {
+        $timer = setTimeout(function () use ($output) {
             $output->setData(Output::TYPE_JSON, ['msg' => 'The connection is timeout']);
             $output->setStatusCode(400);
             $output->send();
-        });
+        }, config()->get('web.timeout', 30));
         return $output->promise()->then(function ($response) use ($timer) {
-            loop()->cancelTimer($timer);
+            clearTimer($timer);
             return $response;
         });
     }
