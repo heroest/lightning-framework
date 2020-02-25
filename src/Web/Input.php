@@ -23,7 +23,7 @@ class Input
         return $this->request;
     }
 
-    public function getHeader(string $name, $default = null)
+    public function header(string $name, $default = null)
     {
         if (!$this->hasHeader($name)) {
             return $default;
@@ -42,7 +42,7 @@ class Input
         return strtolower($this->request->getMethod()) === strtolower($method); 
     }
 
-    public function getCookie(?string $name, $default = null)
+    public function cookie(?string $name, $default = null)
     {
         return self::basicGetResult(
             $this->request->getCookieParams(),
@@ -51,7 +51,7 @@ class Input
         );
     }
 
-    public function getServer(?string $name, $default = null)
+    public function serverParam(?string $name, $default = null)
     {
         return self::basicGetResult(
             $this->request->getServerParams(),
@@ -60,7 +60,7 @@ class Input
         );
     }
 
-    public function getQuery(?string $name = null, $default = null)
+    public function query(?string $name = null, $default = null)
     {
         return self::basicGetResult(
             $this->request->getQueryParams(),
@@ -69,7 +69,7 @@ class Input
         );
     }
 
-    public function getPost(?string $name = null, $default = null)
+    public function post(?string $name = null, $default = null)
     {
         return self::basicGetResult(
             $this->parsePostParams(),
@@ -78,7 +78,7 @@ class Input
         );
     }
 
-    public function getUploadFiles(?string $name = null) 
+    public function upload(?string $name = null) 
     {
         return self::basicGetResult(
             $this->request->getUploadedFiles(),
@@ -86,9 +86,14 @@ class Input
         );
     }
 
+    public function body(): string
+    {
+        return $this->request->getBody()->getContents();
+    }
+
     public function getClientIp(): string
     {
-        $ip = $this->getServer('REMOTE_ADDR');
+        $ip = $this->serverParam('REMOTE_ADDR');
         return $ip === null ? '0.0.0.0' : strval($ip);
     }
 

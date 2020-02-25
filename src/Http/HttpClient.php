@@ -60,10 +60,10 @@ class HttpClient
         $payload->url = $url;
         $payload->method = 'POST';
         $payload->postField = $post_field;
-        $payload->headers = array_merge([
+        $payload->headers = array_merge($headers, [
             'Content-Type' => 'application/x-www-form-urlencoded',
             'Content-Length' => strlen($post_field)
-        ], $headers);
+        ]);
         $payload->setOptions($options);
 
         return self::doRequest($payload);
@@ -86,10 +86,10 @@ class HttpClient
         $payload->url = $url;
         $payload->method = 'POST';
         $payload->postField = $post_field;
-        $payload->headers = array_merge([
+        $payload->headers = array_merge($headers, [
             'Content-Type' => 'application/json',
             'Content-Length' => strlen($post_field)
-        ], $headers);
+        ]);
         $payload->setOptions($options);
 
         return self::doRequest($payload);
@@ -105,7 +105,12 @@ class HttpClient
     private static function doRequest(Payload $payload): PromiseInterface
     {
         $result = new RequestResult();
-        $deferred = new Deferred();
+        $request = null;
+        $canceller = function () use (&$request) {
+            $request->close();
+        };
+        $deferred = new Deferred($canceller);
+        $deferred->promise()->then($canceller, $canceller);
 
         $options = $payload->getOptions();
         $method = $payload->method;
@@ -113,13 +118,7 @@ class HttpClient
         $headers = $payload->headers;
         $result->url = $url;
         $request = self::createClient($options['connection_timeout'])->request($method, $url, $headers);
-        $deferred = self::setTimeout($deferred, $options['timeout']);
-        $promise = $deferred->promise();
-
-        //stop request after timeout
-        $promise->then(function () use ($request) {
-            $request->close();
-        });
+        self::setTimeout($deferred, $options['timeout']);
 
         $request->on('response', function (Response $response) use ($request, $deferred, $result, $payload) {
             $deferred->promise()->then(function () use ($response) {
@@ -128,11 +127,10 @@ class HttpClient
 
             $options = $payload->getOptions();
             if (!empty($options['follow_redirects'])) {
-                $headers = array_change_key_case($response->getHeaders(), CASE_LOWER);
-                if (!empty($headers['location'])) {
+                if ($location = $response->getHeaderLine('location')) {
                     $response->close();
                     $request->close();
-                    $payload->url = $headers['location'];
+                    $payload->url = $location;
                     $deferred->resolve(self::doRequest($payload));
                     return;
                 }
@@ -148,7 +146,7 @@ class HttpClient
         $request->end($payload->postField);
         $result->time_request = microtime(true);
 
-        return $promise;
+        return  $deferred->promise();
     }
 
     private static function handleResponse(Request $request, Response $response, RequestResult $result, Deferred $deferred): void
@@ -184,7 +182,7 @@ class HttpClient
         }
     }
 
-    private static function setTimeout(Deferred $deferred, float $timeout): Deferred
+    private static function setTimeout(Deferred $deferred, float $timeout)
     {
         $promise = $deferred->promise();
         $timer = loop()->addTimer($timeout, function () use ($deferred) {
@@ -196,6 +194,5 @@ class HttpClient
         $promise->then(function () use ($timer) {
             loop()->cancelTimer($timer);
         });
-        return $deferred;
     }
 }
