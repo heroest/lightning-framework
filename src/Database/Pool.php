@@ -124,7 +124,7 @@ class Pool
             $this->waitingListBlock = new Deferred();
         }
 
-        await($this->waitingListBlock->promise(), 60);
+        await($this->waitingListBlock->promise());
         $this->waitingListBlock = null;
     }
 
@@ -137,7 +137,6 @@ class Pool
             if ($this->waitingListCount == 0) {
                 return;
             }
-
             $data = $event->data;
             $key = "{$data['connection_name']}:{$data['role']}";
             if (!isset($this->waitingList[$key]) or (0 === $this->waitingList[$key]->count())) {
@@ -146,10 +145,8 @@ class Pool
             $event->stopPropagation();
 
             $connection = $data['connection'];
-            if (
-                Connection::STATE_CLOSE === $connection->getDuration()
-                and false === $connection->open
-            ) {
+            if (Connection::STATE_CLOSE === $connection->getState() 
+                and false === $connection->open) {
                 return;
             }
             if (!$this->waitingList[$key]->valid()) {
@@ -158,7 +155,7 @@ class Pool
             $deferred = $this->waitingList[$key]->current();
             $this->waitingList[$key]->detach($deferred);
             $deferred->resolve($connection);
-
+            $this->waitingListCount--;
             $this->releaseBlockWait();
         };
         $em->on($event_on_idle, $callback);
