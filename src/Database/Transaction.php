@@ -73,8 +73,7 @@ class Transaction
         return Query::useTransaction($this)
             ->execute(self::SQL_COMMIT)
             ->then(function () {
-                $this->closePendingConnections();
-                $this->closeTransaction();
+                $this->close();
                 $this->connection->closeTransaction();
                 return true;
             }, function ($error) {
@@ -85,17 +84,15 @@ class Transaction
 
     public function rollback(): PromiseInterface
     {
-        $this->closePendingConnections();
+        $this->cancelPendingQuery();
         return Query::useTransaction($this)
             ->execute(self::SQL_ROLLBACK)
             ->then(function () {
-                $this->closePendingConnections();
-                $this->closeTransaction();
+                $this->close();
                 $this->connection->closeTransaction();
                 return true;
             }, function ($error) {
-                $this->closePendingConnections();
-                $this->closeTransaction();
+                $this->close();
                 $this->connection->terminate(new DatabaseException('Transaction has failed.', 500, $error));
                 throw $error;
             });
@@ -122,19 +119,17 @@ class Transaction
         $em->on($event_name, $this->connectionResolver);
     }
 
-    private function closePendingConnections(): void
+    private function cancelPendingQuery(): void
     {
-        if (0 === count($this->pendingConnections)) {
-            return;
-        }
-
         while (null !== $deferred = array_shift($this->pendingConnections)) {
             $deferred->promise()->cancel();
         }
     }
 
-    private function closeTransaction(): void
+    private function close(): void
     {
+        $this->cancelPendingQuery();
+
         $this->isClosed = true;
         $em = container()->get('event-manager');
         $event_name = Connection::eventName(

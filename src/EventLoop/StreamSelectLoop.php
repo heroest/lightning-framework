@@ -1,11 +1,10 @@
 <?php
 namespace Lightning\EventLoop;
 
-use \React\EventLoop\Tick\FutureTickQueue;
-use \React\EventLoop\Timer\Timer;
-use \React\EventLoop\{TimerInterface, SignalsHandler};
-use \Lightning\Base\{ArrayObject, AwaitableLoopInterface};
-use \Lightning\EventLoop\Timers;
+use React\EventLoop\Tick\FutureTickQueue;
+use React\EventLoop\Timer\{Timer, Timers};
+use React\EventLoop\{TimerInterface, SignalsHandler};
+use Lightning\Base\ExtendedEventLoopInterface;
 
 
 /**
@@ -56,7 +55,7 @@ use \Lightning\EventLoop\Timers;
  * @version alter version of original react\StreamSelectLoop
  */
 
-final class StreamSelectLoop implements AwaitableLoopInterface
+final class StreamSelectLoop implements ExtendedEventLoopInterface
 {
     /** @internal */
     const MICROSECONDS_PER_SECOND = 1000000;
@@ -74,10 +73,10 @@ final class StreamSelectLoop implements AwaitableLoopInterface
 
     public function __construct()
     {
-        $this->readStreams = new ArrayObject();
-        $this->readListeners = new ArrayObject();
-        $this->writeStreams = new ArrayObject();
-        $this->writeListeners = new ArrayObject();
+        $this->readStreams = [];
+        $this->readListeners = [];
+        $this->writeStreams = [];
+        $this->writeListeners = [];
         $this->futureTickQueue = new FutureTickQueue();
         $this->timers = new Timers();
         $this->pcntl = \extension_loaded('pcntl');
@@ -211,7 +210,7 @@ final class StreamSelectLoop implements AwaitableLoopInterface
                 }
 
             // The only possible event is stream or signal activity, so wait forever ...
-            } elseif (!$this->readStreams->isEmpty() || !$this->writeStreams->isEmpty() || !$this->signals->isEmpty()) {
+            } elseif ($this->readStreams || $this->writeStreams || !$this->signals->isEmpty()) {
                 $timeout = null;
 
             // There's nothing left to do ...
@@ -235,8 +234,8 @@ final class StreamSelectLoop implements AwaitableLoopInterface
      */
     private function waitForStreamActivity($timeout)
     {
-        $read  = $this->readStreams->toArray();
-        $write = $this->writeStreams->toArray();
+        $read  = $this->readStreams;
+        $write = $this->writeStreams;
 
         $available = $this->streamSelect($read, $write, $timeout);
         if ($this->pcntlActive) {

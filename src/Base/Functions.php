@@ -3,60 +3,6 @@
 namespace Lightning;
 
 /**
- * Block-wait for promise to resolve or reject
- *
- * @param PromiseInterface $promise
- * @return mixed
- */
-function await(\React\Promise\PromiseInterface $promise)
-{
-    $loop = \lightning\loop();
-
-    $nested = clone $loop;
-    $resolved = false;
-    $result = null;
-    $callback = function ($value) use (&$nested, &$result, &$resolved) {
-        $resolved = true;
-        $result = $value;
-        $nested->stop();
-        unset($nested);
-
-        if ($value instanceof \Throwable) {
-            throw $value;
-        } else {
-            return $value;
-        }
-    };
-    $promise->then($callback, $callback);
-
-    if (!$resolved) {
-        $nested->run();
-    }
-    return $result;
-}
-
-/**
- * Extract result from promise
- *
- * @param \React\Promise\PromiseInterface $promise
- * @return mixed
- */
-function extractPromise(\React\Promise\PromiseInterface $promise)
-{
-    $result = null;
-    $callback = function ($value) use (&$result) {
-        $result = $value;
-        if ($value instanceof \Throwable) {
-            throw $value;
-        } else {
-            return $value;
-        }
-    };
-    $promise->then($callback, $callback);
-    return $result;
-}
-
-/**
  * Check if input array is a associateive array
  *
  * @param array $arr
@@ -139,11 +85,20 @@ function container(): \Lightning\System\Container
 /**
  * container: get loop
  *
- * @return \Lightning\Base\AwaitableLoopInterface
+ * @return \Lightning\Base\ExtendedEventLoopInterface
  */
-function loop(): \Lightning\Base\AwaitableLoopInterface
+function loop(): \Lightning\Base\ExtendedEventLoopInterface
 {
-    return \Lightning\container()->get('loop');
+    static $loop = null;
+    if (null === $loop) {
+        $loop = \Lightning\EventLoop\LoopFactory::buildLoop();
+    }
+    return $loop;
+}
+
+function nextTick(callable $callback): void
+{
+    \Lightning\loop()->futureTick($callback);
 }
 
 /**
@@ -200,27 +155,4 @@ function config(): \Lightning\System\Config
 function uxPath(string $path): string
 {
     return strtr($path, '\\', '/');
-}
-
-/**
- * Promise Time watcher
- *
- * @param \React\Promise\PromiseInterface $promise
- * @param float $timeout
- * @return void
- */
-function watch(\React\Promise\PromiseInterface $promise, float $timeout): void
-{
-    $timer = \Lightning\setTimeout(function() use ($promise) {
-        $promise->cancel();
-    }, $timeout);
-    $callback = function ($value) use ($timer) {
-        \Lightning\clearTimer($timer);
-        if ($value instanceof \Throwable) {
-            throw $value;
-        } else {
-            return $value;
-        }
-    };
-    $promise->then($callback, $callback);
 }
