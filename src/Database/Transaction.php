@@ -2,140 +2,166 @@
 
 namespace Lightning\Database;
 
-use Throwable;
-use SplObjectStorage;
 use React\Promise\{Deferred, PromiseInterface};
-use Lightning\Exceptions\DatabaseException;
-use Lightning\Database\{Connection, Query};
-use function Lightning\{container};
-use function React\Promise\{resolve, reject};
-
-/**
- * Mysql Transaction
- */
+use Lightning\Database\{Query, DatabaseException, Connection};
 class Transaction
 {
-    const SQL_ROLLBACK = 'ROLLBACK;';
-    const SQL_COMMIT = 'COMMIT;';
     private $connectionName = '';
-    /** @var \Lightning\Database\Connection $connection */
-    private $connection = null;
-    private $pendingConnections = [];
-    private $connectionResolver = null;
-    private $isClosed = false;
+    private $closed = false;
+    private $settled = false;
+    private $timeout = 0;
+    private $connection;
+    const STATEMENT_START = 'START TRANSACTION;';
+    const STATEMENT_ROLLBACK = 'ROLLBACK;';
+    const STATEMENT_COMMIT = 'COMMITa;';
 
-    private function __construct(string $connection_name)
+    private function __construct(string $connection_name, float $timeout)
     {
         $this->connectionName = $connection_name;
-        $this->registerPendingConnectionResolver();
+        $this->timeout = $timeout;
     }
 
-    public function getConnectionName(): string
+    public function getConnectionName()
     {
         return $this->connectionName;
     }
 
-    public function getConnection(): PromiseInterface
+    public function bindConnection(Connection $connection)
     {
-        if (true === $this->isClosed) {
-            return reject(new DatabaseException("Transaction has been closed."));
-        } elseif ($this->connection === null) {
-            $dbm = container()->get('dbm');
-            $promise = $dbm->getTransactionConnection($this->connectionName, $this);
-            return $promise->then(function (Connection $connection) {
-                $this->connection = $connection;
-                return $connection;
-            }, function ($error) {
-                throw $error;
-            });
-        } elseif (Connection::STATE_TRANSACTION_IDLE === $this->connection->getState()) {
-            return resolve($this->connection);
+        $this->connection = $connection;
+    }
+
+    public function getConnection(): ?Connection
+    {
+        return $this->connection;
+    }
+
+    /**
+     * 关闭数据库事务
+     *
+     * @param float $timeout
+     * @return void
+     */
+    public function close(float $timeout = 30)
+    {
+        $this->closed = true;
+        /** @var QueryManager $manager */
+        $manager = QueryManager::getInstance();
+        if ($this->settled) {
+            $manager->closeTransanction($this, $timeout)
+                ->otherwise(function () use ($manager) {
+                    $manager->terminateTransactionConnection($this);
+                });
         } else {
-            $cannceller = function () {
-                throw new DatabaseException("Transaction has been canceled.");
-            };
-            $deferred = new Deferred($cannceller);
-            $this->pendingConnections[] = $deferred;
-            return $deferred->promise();
+            $manager->terminateTransactionConnection($this);
         }
     }
 
-    public static function start(string $connection_name): self
+    /**
+     * 查询事务是否已关闭
+     *
+     * @return boolean
+     */
+    public function isClosed(): bool
     {
-        $instance = new self($connection_name);
-        $query = Query::useTransaction($instance);
-        $query->execute('START TRANSACTION;');
-        return $instance;
+        return $this->closed;
     }
 
+    /**
+     * 获取数据库事务实例
+     *
+     * @param string $connection_name
+     * @param float $timeout
+     * @return self
+     */
+    public static function connection(string $connection_name, float $timeout = 30): self
+    {
+        return new self($connection_name, $timeout);
+    }
+
+    /**
+     * 事务开始
+     *
+     * @param string $connection_name
+     * @param float $timeout
+     * @return PromiseInterface
+     */
+    public function start(): PromiseInterface
+    {
+        $deferred = new Deferred(function () {
+            $this->close();
+            throw new DatabaseException("transaction-is-timeout");
+        });
+        /** @var QueryManager $manager */
+        $manager = QueryManager::getInstance();
+        $connected = $manager->startTransaction($this, $this->timeout);
+        $connected->then(
+            function () use ($deferred) {
+                $promise = Query::useTransaction($this)
+                    ->setSql(self::STATEMENT_START)
+                    ->execute();
+                $deferred->resolve($promise);
+            }, 
+            function ($error) use ($deferred, $connected) {
+                $deferred->reject($error);
+            }
+        );
+        return $deferred->promise();
+    }
+
+    /**
+     * 事务提交
+     *
+     * @return PromiseInterface
+     */
     public function commit(): PromiseInterface
     {
-        return Query::useTransaction($this)
-            ->execute(self::SQL_COMMIT)
-            ->then(function () {
-                $this->close();
-                $this->connection->closeTransaction();
-                return true;
-            }, function ($error) {
-                $this->rollback();
-                throw $error;
-            });
+        $deferred = new Deferred(function () {
+            throw new DatabaseException("Transaction commit failed due to promise-canelling");
+        });
+        $queried = null;
+        $queried = Query::useTransaction($this)
+            ->setSql(self::STATEMENT_COMMIT)
+            ->execute()
+            ->then(
+                function () use ($deferred) {
+                    $this->settled = true;
+                    $deferred->resolve($this->close());
+                },
+                function ($error) use ($deferred, &$queried) { //settle-failed, force closse connection
+                    $queried->cancel();
+                    $this->closed = true;
+                    $deferred->reject($error);
+                }
+            );
+        return $deferred->promise();
     }
 
+    /**
+     * 事务回滚
+     *
+     * @return PromiseInterface
+     */
     public function rollback(): PromiseInterface
     {
-        $this->cancelPendingQuery();
-        return Query::useTransaction($this)
-            ->execute(self::SQL_ROLLBACK)
-            ->then(function () {
-                $this->close();
-                $this->connection->closeTransaction();
-                return true;
-            }, function ($error) {
-                $this->close();
-                $this->connection->terminate(new DatabaseException('Transaction has failed.', 500, $error));
-                throw $error;
-            });
-    }
-
-    private function registerPendingConnectionResolver(): void
-    {
-        $em = container()->get('event-manager');
-        $event_name = Connection::eventName(
-            Connection::ACTION_STATE_CHANGED,
-            Connection::STATE_TRANSACTION_IDLE
-        );
-        $this->connectionResolver = function ($event) {
-            $connection = $event->data['connection'];
-            if ($connection !== $this->connection) {
-                return;
-            };
-
-            $event->stopPropagation();
-            if (null !== $deferred = array_shift($this->pendingConnections)) {
-                $deferred->resolve($connection);
-            }
-        };
-        $em->on($event_name, $this->connectionResolver);
-    }
-
-    private function cancelPendingQuery(): void
-    {
-        while (null !== $deferred = array_shift($this->pendingConnections)) {
-            $deferred->promise()->cancel();
-        }
-    }
-
-    private function close(): void
-    {
-        $this->cancelPendingQuery();
-
-        $this->isClosed = true;
-        $em = container()->get('event-manager');
-        $event_name = Connection::eventName(
-            Connection::ACTION_STATE_CHANGED,
-            Connection::STATE_TRANSACTION_IDLE
-        );
-        $em->off($event_name, $this->connectionResolver);
+        $deferred = new Deferred(function () {
+            throw new DatabaseException("Transaction rollback failed due to promise-cancelling");
+        });
+        $queried = null;
+        $queried = Query::useTransaction($this)
+            ->setSql(self::STATEMENT_ROLLBACK)
+            ->execute()
+            ->then(
+                function () use ($deferred) {
+                    $this->settled = true;
+                    $deferred->resolve($this->close());
+                },
+                function ($error) use ($deferred, &$queried) { //settle-failed, force closse connection
+                    $queried->cancel();
+                    $this->closed = true;
+                    $deferred->reject($error);
+                }
+            );
+        return $deferred->promise();
     }
 }

@@ -1,19 +1,37 @@
 <?php
-
 namespace Lightning\Http;
 
-use Lightning\Exceptions\HttpException;
-use Lightning\Http\Payload;
-use Lightning\Http\RequestResult;
-use React\HttpClient\{Client AS ReactHttpClient, Response, Request};
+use React\HttpClient\{
+    Client as BaseClient,
+    Response as BaseResponse,
+    Request
+};
 use React\Promise\{Deferred, PromiseInterface};
 use React\Socket\Connector;
-use function Lightning\{container, loop};
+use Sue\Http\{HttpException, Result};
+use function Lightning\loop;
+use function React\Promise\Timer\timeout;
 
-class HttpClient
+class Client
 {
-    public function __construct()
+
+    private static $instance = null;
+    private static $loop;
+    private static $baseClient = null;
+
+    private function __construct()
     {
+        self::$loop = loop();
+        $connector = new Connector(self::$loop);
+        self::$baseClient = new BaseClient(self::$loop, $connector);
+    }
+
+    public static function getInstance(): self
+    {
+        if (self::$instance === null) {
+            self::$instance = new self();
+        }
+        return self::$instance;
     }
 
     /**
@@ -25,7 +43,7 @@ class HttpClient
      * @param float $timeout
      * @return PromiseInterface
      */
-    public function get(string $url, array $params = [], array $headers = [], array $options = []): PromiseInterface
+    public function get(string $url, array $params = [], array $headers = [], float $timeout = 15): PromiseInterface
     {
         $parts = self::parseUrl($url);
         $url = $parts['url'];
@@ -34,13 +52,7 @@ class HttpClient
             $url .= '?' . http_build_query($params);
         }
 
-        $payload = new Payload();
-        $payload->url = $url;
-        $payload->method = 'GET';
-        $payload->headers = $headers;
-        $payload->setOptions($options);
-
-        return self::doRequest($payload);
+        return $this->doRequest('GET', $url, $headers, $timeout);
     }
 
     /**
@@ -52,21 +64,15 @@ class HttpClient
      * @param float $timeout
      * @return PromiseInterface
      */
-    public function post(string $url, array $post_data = [], array $headers = [], $options = []): PromiseInterface
+    public function post(string $url, array $post_data = [], array $headers = [], float $timeout = 15): PromiseInterface
     {
         $post_field = http_build_query($post_data);
-
-        $payload = new Payload();
-        $payload->url = $url;
-        $payload->method = 'POST';
-        $payload->postField = $post_field;
-        $payload->headers = array_merge($headers, [
+        $headers = array_merge([
             'Content-Type' => 'application/x-www-form-urlencoded',
             'Content-Length' => strlen($post_field)
-        ]);
-        $payload->setOptions($options);
+        ], $headers);
 
-        return self::doRequest($payload);
+        return $this->doRequest('POST', $url, $headers, $timeout, $post_field);
     }
 
     /**
@@ -78,80 +84,52 @@ class HttpClient
      * @param float $timeout
      * @return PromiseInterface
      */
-    public function jsonPost(string $url, array $post_data = [], array $headers = [], $options = []): PromiseInterface
+    public function jsonPost(string $url, array $post_data = [], array $headers = [], float $timeout = 15): PromiseInterface
     {
-        $post_field = json_encode($post_data);
-
-        $payload = new Payload();
-        $payload->url = $url;
-        $payload->method = 'POST';
-        $payload->postField = $post_field;
-        $payload->headers = array_merge($headers, [
+        $post_field = json_encode($post_data, JSON_UNESCAPED_UNICODE);
+        $headers = array_merge([
             'Content-Type' => 'application/json',
             'Content-Length' => strlen($post_field)
-        ]);
-        $payload->setOptions($options);
+        ], $headers);
 
-        return self::doRequest($payload);
+        return $this->doRequest('POST', $url, $headers, $timeout, $post_field);
     }
 
-    private static function createClient($timeout): ReactHttpClient
+    private function doRequest(string $method, string $url, array $headers, float $timeout, ?string $post_field = null): PromiseInterface
     {
-        $loop = loop();
-        $connector = new Connector($loop, ['timeout' => $timeout]);
-        return new ReactHttpClient($loop, $connector);
-    }
-
-    private static function doRequest(Payload $payload): PromiseInterface
-    {
-        $result = new RequestResult();
+        /** @var Request $request */
         $request = null;
-        $canceller = function () use (&$request) {
+        $deferred = new Deferred(function () use (&$request) {
             $request->close();
-        };
-        $deferred = new Deferred($canceller);
-        $deferred->promise()->then($canceller, $canceller);
+            throw new HttpException("请求超时");
+        });
 
-        $options = $payload->getOptions();
-        $method = $payload->method;
-        $url = $payload->url;
-        $headers = $payload->headers;
-        $result->url = $url;
-        $request = self::createClient($options['connection_timeout'])->request($method, $url, $headers);
-        self::setTimeout($deferred, $options['timeout']);
+        $promise = $deferred->promise();
+        $request = self::$baseClient->request($method, $url, $headers);
 
-        $request->on('response', function (Response $response) use ($request, $deferred, $result, $payload) {
-            $deferred->promise()->then(function () use ($response) {
+        $promise->then(function () use (&$request) {
+            $request->close();
+        });
+
+        $result = new Result();
+        $request->on('response', function (BaseResponse $response) use ($deferred, $result, $promise) {
+            $promise->then(function () use ($response) {
                 $response->close();
             });
-
-            $options = $payload->getOptions();
-            if (!empty($options['follow_redirects'])) {
-                if ($location = $response->getHeaderLine('location')) {
-                    $response->close();
-                    $request->close();
-                    $payload->url = $location;
-                    $deferred->resolve(self::doRequest($payload));
-                    return;
-                }
-            }
-            self::handleResponse($request, $response, $result, $deferred);
+            self::handleResponse($response, $result, $deferred);
         });
 
-        $request->on('error', function ($error) use ($deferred, $result) {
-            $result->error = $error;
-            $deferred->resolve($result);
+        $request->on('error', function ($error) use ($deferred) {
+            $deferred->reject($error);
         });
-
-        $request->end($payload->postField);
-        $result->time_request = microtime(true);
-
-        return  $deferred->promise();
+        $request->end($post_field);
+        $result->timer('request');
+        return timeout($promise, $timeout, self::$loop);
     }
 
-    private static function handleResponse(Request $request, Response $response, RequestResult $result, Deferred $deferred): void
+    private static function handleResponse(BaseResponse $response, Result $result, Deferred $deferred)
     {
-        $result->time_response = microtime(true);
+        $result->timer('response');
         $result->headers = $response->getHeaders();
         $result->code = $response->getCode();
 
@@ -161,12 +139,10 @@ class HttpClient
             $data .= $chunk;
             $chunk_count++;
         });
-        $response->on('end', function () use (&$data, &$chunk_count, $request, $response, $result, $deferred) {
-            $request->close();
-            $response->close();
-            $result->chunk_count = $chunk_count;
+        $response->on('end', function () use (&$data, &$chunk_count, $result, $deferred) {
+            $result->chunkCount = $chunk_count;
             $result->data = $data;
-            $result->time_end = microtime(true);
+            $result->timer('end');
             $deferred->resolve($result);
         });
     }
@@ -180,19 +156,5 @@ class HttpClient
         } else {
             return ['url' => $url, 'query' => []];
         }
-    }
-
-    private static function setTimeout(Deferred $deferred, float $timeout)
-    {
-        $promise = $deferred->promise();
-        $timer = loop()->addTimer($timeout, function () use ($deferred) {
-            $result = new RequestResult();
-            $result->error = new HttpException("请求时间超时");
-            $result->time_end = microtime(true);
-            $deferred->resolve($result);
-        });
-        $promise->then(function () use ($timer) {
-            loop()->cancelTimer($timer);
-        });
     }
 }

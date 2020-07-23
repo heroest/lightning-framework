@@ -5,46 +5,99 @@ namespace Lightning\Database;
 use mysqli;
 use mysqli_result;
 use Throwable;
-use RuntimeException;
-use Lightning\Database\Expression;
-use Lightning\Database\QueryResult;
-use function Lightning\container;
 use React\Promise\{Deferred, PromiseInterface};
-use function React\Promise\{reject};
+use Lightning\Database\{DatabaseException, Transaction, Expression, QueryResult};
+use function React\Promise\{reject, resolve};
 
 class Connection
 {
-    const STATE_CLOSE = -1;
+    const STATE_CLOSE = 0;
     const STATE_IDLE = 1;
     const STATE_WORKING = 2;
-    const STATE_TRANSACTION_IDLE = 4;
-    const STATE_TRANSACTION_WORKING = 8;
 
-    const ACTION_STATE_CHANGED = 'state_changed';
+    /**
+     * 数据库状态
+     *
+     * @var int
+     */
+    private $state;
 
-    const FETCH_MODES = ['fetch_all', 'fetch_row'];
+    /**
+     * 数据库状态开始时间
+     *
+     * @var float
+     */
+    private $stateTimeStart;
 
-    private $eventManager;
+    /** 
+     * 链接名称
+     * @var string
+     */
     private $connectionName;
-    private $role;
-    /** @var mysqli $link */
+
+    /** 
+     * 链接身份 (master / slave)
+     * @var string
+     */
+    private $connectionRole;
+
+    /** 
+     * 数据库链接实例
+     * @var mysqli $link 
+     */
     private $link;
+
+    /**
+     * 数据库配置
+     *
+     * @var array
+     */
     private $credential = [];
+
+    /**
+     * 链接的概述
+     *
+     * @var array
+     */
     private $profile = [];
-    private $state = self::STATE_CLOSE;
-    private $stateTimeStart = 0;
+
+    /**
+     * 返回数据Deferred
+     *
+     * @var \React\Promise\Deferred $deferred
+     */
     private $deferred;
-    private $fetchMode;
+
+    /**
+     * 数据库事务
+     *
+     * @var null|\Lightning\Database\Transaction
+     */
     private $transaction = null;
 
-    public function __construct(string $connection_name, array $options)
+    public function __construct(string $name, string $role, array $option)
     {
-        $this->eventManager = container()->get('event-manager');
-        $this->connectionName = $connection_name;
-        $this->role = $options['role'];
-        unset($options['role']);
-        $this->credential = $options;
+        $this->connectionName = $name;
+        $this->connectionRole = $role;
+        $this->credential = [
+            'host' => $option['host'],
+            'username' => $option['username'],
+            'password' => $option['password'],
+            'dbname' => $option['dbname'],
+            'port' => $option['port']
+        ];
+        $this->changeState(self::STATE_CLOSE);
         $this->updateProfile('time_created', microtime(true));
+    }
+
+    public function getName(): string
+    {
+        return $this->connectionName;
+    }
+
+    public function getRole(): string
+    {
+        return $this->connectionRole;
     }
 
     public function getLink(): ?mysqli
@@ -52,128 +105,39 @@ class Connection
         return $this->link;
     }
 
-    public function getState()
-    {
-        return $this->state;
-    }
-
-    public function getStateDuration()
-    {
-        return floatval(bcsub(microtime(true), $this->stateTimeStart, 4));
-    }
-
-    public function beginTransaction(Transaction $transaction): self
-    {
-        $this->transaction = $transaction;
-        $this->changeState(self::STATE_TRANSACTION_IDLE);
-        return $this;
-    }
-
-    public function inTransaction(): bool
-    {
-        return $this->transaction !== null;
-    }
-
-    public function getTransaction(): ?Transaction
-    {
-        return $this->transaction;
-    }
-
-    public function closeTransaction()
-    {
-        $this->transaction = null;
-        $this->changeState(self::STATE_IDLE);
-    }
-
-    public function query(string $sql, ?array $params = [], string $fetch_mode = 'fetch_row'): PromiseInterface
-    {
-        if (!in_array($this->state, [self::STATE_IDLE, self::STATE_TRANSACTION_IDLE])) {
-            return reject(new RuntimeException('Connection is not ready for query yet'));
-        }
-
-        if (!empty($params)) {
-            $sql = $this->bindParamsToSql($sql, $params);
-        }
-        
-        $this->fetchMode = $fetch_mode;
-        $this->updateProfile('time_query', time());
-        $canceller = function () {
-            $this->close();
-            throw new DatabaseException("Query is cancelled");
-        };
-        $this->deferred = new Deferred($canceller);
-        $state = $this->inTransaction() ? self::STATE_TRANSACTION_WORKING : self::STATE_WORKING;
-        $this->changeState($state);
-        $this->link->query($sql, MYSQLI_ASYNC);
-        return $this->deferred->promise();
-    }
-
-    public function resolve($mixed)
-    {
-        if (null !== $this->deferred) {
-            $this->deferred->resolve($this->fetchQueryResult($mixed));
-        }
-        $this->reset();
-        $state = ($this->inTransaction()) ? self::STATE_TRANSACTION_IDLE : self::STATE_IDLE;
-        $this->changeState($state);
-    }
-
-    public function reject($error)
-    {
-        if (null !== $this->deferred) {
-            $this->deferred->reject($error);
-        }
-        $this->reset();
-        if ($this->inTransaction()) {
-            $this->getTransaction()->rollback();
-            $this->changeState(self::STATE_TRANSACTION_IDLE);
-        } else {
-            $this->changeState(self::STATE_IDLE);
-        }
-    }
-
-    public function terminate($error)
-    {
-        if (null !== $this->deferred) {
-            $this->deferred->reject($error);
-        }
-        $this->reset();
-        $this->close();
-    }
-
-    public static function eventName(string $action, $state): string
-    {
-        $class_name = str_replace("\\", "_", self::class);
-        return implode('.', [$class_name, $action, $state]);
-    }
-
     public function open(): bool
     {
-        if ($this->state !== self::STATE_CLOSE) {
+        if (self::STATE_IDLE === $this->state) {
+            return true;
+        } elseif (self::STATE_CLOSE !== $this->state) {
             return false;
         }
 
-        $this->updateProfile('time_opened', time());
-        $config = $this->credential;
+        $credential = $this->credential;
         try {
             $this->link = new mysqli(
-                $config['host'],
-                $config['username'],
-                $config['password'],
-                $config['dbname'],
-                $config['port']
+                $credential['host'],
+                $credential['username'],
+                $credential['password'],
+                $credential['dbname'],
+                $credential['port']
             );
+            $this->link->query('SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci');
             $this->changeState(self::STATE_IDLE);
+            $this->updateProfile('time_opened', microtime(true));
             return true;
         } catch (Throwable $e) {
-            //do log stuff
-            echo json_encode([
-                'code' => $e->getCode(),
-                'msg' => $e->getMessage(),
-                'config' => $config
-            ]) . "\r\n";
+            echo $e;
+            $this->updateProfile('time_opened_failed', microtime(true));
             return false;
         }
+    }
+
+    public function getConnectedDuration(): float
+    {
+        return isset($this->profile['time_opened'])
+                ? floatval(bcsub(microtime(true), $this->profile['time_opened'], 4))
+                : 0;
     }
 
     public function close()
@@ -183,7 +147,12 @@ class Connection
             $this->link->close();
             $this->link = null;
         }
-        $this->reset();
+
+        if (null !== $this->deferred) {
+            $this->deferred->reject(new DatabaseException('Database Connection has been closed'));
+        }
+        $this->deferred = null;
+        $this->transaction = null;
         $this->changeState(self::STATE_CLOSE);
     }
 
@@ -196,16 +165,113 @@ class Connection
         }
     }
 
-    public function getProfile($field)
+    public function getState(): string
     {
-        return isset($this->profile[$field]) ? $this->profile[$field] : null;
+        return $this->state;
+    }
+
+    public function inState(int $state): bool
+    {
+        return $state === $this->state;
+    }
+
+    public function changeState($state): void
+    {
+        $this->state = $state;
+        $this->stateTimeStart = microtime(true);
+    }
+
+    /**
+     * 获取了状态储蓄了多少时间（精确到毫秒）
+     *
+     * @return float
+     */
+    public function getStateDuration(): float
+    {
+        return floatval(bcsub(microtime(true), $this->stateTimeStart, 4));
+    }
+
+    /**
+     * 判断Connection是否处于某个状态并持续了x秒
+     *
+     * @param int $state
+     * @param float $duration_seconds
+     * @return boolean
+     */
+    public function stayOver($state, float $duration_seconds): bool
+    {
+        return ($this->inState($state))
+                ? $this->getStateDuration() > $duration_seconds
+                : false;
+    }
+
+    public function getTransaction(): Transaction
+    {
+        return $this->transaction;
+    }
+
+    public function inTransaction(): bool
+    {
+        return null !== $this->transaction;
+    }
+
+    public function closeTransanction()
+    {
+        $this->transaction = null;
+        $this->changeState(self::STATE_IDLE);
+    }
+
+    public function beginTransaction(Transaction $transaction)
+    {
+        $this->transaction = $transaction;
+    }
+
+    public function query(string $sql, array $params = []): PromiseInterface
+    {
+        if (false === $this->inState(self::STATE_IDLE)) {
+            return reject(new DatabaseException('Connection is not ready for query yet'));
+        }
+
+        if ($params) {
+            $sql = $this->bindParamsToSql($sql, $params);
+        }
+
+        $this->deferred = new Deferred(function () {
+            $this->close();
+            throw new DatabaseException("Query has been cancelled due to promise-cancelling");
+        });
+        $this->changeState(self::STATE_WORKING);
+        $this->link->query($sql, MYSQLI_ASYNC);
+        return $this->deferred->promise();
+    }
+
+    public function resolve($mixed)
+    {
+        $this->deferred->resolve($this->fetchQueryResult($mixed));
+        $this->reset();
+    }
+
+    public function reject($error)
+    {
+        $this->deferred->reject($error);
+        $this->reset();
+    }
+
+    private function fetchQueryResult($mixed)
+    {
+        if ($mixed instanceof mysqli_result) {
+            $data = $mixed->fetch_all(MYSQLI_ASSOC);
+            $mixed->close();
+            return QueryResult::useQueryResult($data);
+        } else {
+            return QueryResult::useExecutionResult($this->link->insert_id, $this->link->affected_rows);
+        }
     }
 
     private function reset()
     {
         $this->deferred = null;
-        $this->transaction = null;
-        $this->fetchMode = '';
+        $this->changeState(self::STATE_IDLE);
     }
 
     private function bindParamsToSql(string $sql, array $params)
@@ -225,35 +291,11 @@ class Connection
         return str_replace($search, $replace, $sql);
     }
 
-    private function fetchQueryResult($mixed): QueryResult
-    {
-        if ($mixed instanceof mysqli_result) {
-            if ($this->fetchMode == 'fetch_row') {
-                $data = $mixed->fetch_assoc();
-            } elseif ($this->fetchMode == 'fetch_all') {
-                $data = $mixed->fetch_all(MYSQLI_ASSOC);
-            }
-            $mixed->close();
-            return QueryResult::setQueryResult($data);
-        } else {
-            return QueryResult::setExecutionResult($this->link->insert_id, $this->link->affected_rows);
-        }
-    }
-
-    private function changeState($state)
-    {
-        $this->state = $state;
-        $this->stateTimeStart = microtime(true);
-        $this->eventManager->emit(
-            self::eventName(self::ACTION_STATE_CHANGED, $state),
-            [
-                'connection_name' => $this->connectionName,
-                'role' => $this->role,
-                'connection' => $this
-            ]
-        );
-    }
-
+    /**
+     * 更新概述
+     *
+     * @return void
+     */
     private function updateProfile()
     {
         $param = func_get_args();
@@ -264,6 +306,6 @@ class Connection
         } else {
             $this->profile[$param[0]] = $param[1];
         }
-        $this->profile['time_updated'] = time();
+        $this->profile['time_updated'] = microtime(true);
     }
 }

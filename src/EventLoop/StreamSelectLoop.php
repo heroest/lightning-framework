@@ -1,11 +1,15 @@
 <?php
-namespace Lightning\EventLoop;
 
+namespace Sue\EventLoop;
+
+use React\Promise\PromiseInterface;
+use React\EventLoop\Timer\Timer;
+use React\EventLoop\{SignalsHandler, TimerInterface};
 use React\EventLoop\Tick\FutureTickQueue;
-use React\EventLoop\Timer\{Timer, Timers};
-use React\EventLoop\{TimerInterface, SignalsHandler};
-use Lightning\Base\ExtendedEventLoopInterface;
-
+use Sue\EventLoop\ExtendEventLoopInterface;
+use Sue\EventLoop\Timer\Timers;
+use Sue\EventLoop\Tick\DeferTickQueue;
+use Sue\Coroutine\CoroutineScheduler;
 
 /**
  * {{This is alternative version of \React\StreamSelectLoop}}
@@ -51,21 +55,21 @@ use Lightning\Base\ExtendedEventLoopInterface;
  * See also [`addTimer()`](#addtimer) for more details.
  *
  * @link http://php.net/manual/en/function.stream-select.php
- * @inheritDoc
- * @version alter version of original react\StreamSelectLoop
  */
-
-final class StreamSelectLoop implements ExtendedEventLoopInterface
+final class StreamSelectLoop implements ExtendEventLoopInterface
 {
     /** @internal */
     const MICROSECONDS_PER_SECOND = 1000000;
 
+    /** @var CoroutineScheduler $coroutineScheduler */
+    private $coroutineScheduler;
+    private $deferTickQueue;
     private $futureTickQueue;
     private $timers;
-    private $readStreams;
-    private $readListeners;
-    private $writeStreams;
-    private $writeListeners;
+    private $readStreams = array();
+    private $readListeners = array();
+    private $writeStreams = array();
+    private $writeListeners = array();
     private $running;
     private $pcntl = false;
     private $pcntlActive = false;
@@ -73,11 +77,9 @@ final class StreamSelectLoop implements ExtendedEventLoopInterface
 
     public function __construct()
     {
-        $this->readStreams = [];
-        $this->readListeners = [];
-        $this->writeStreams = [];
-        $this->writeListeners = [];
+        $this->coroutineScheduler = CoroutineScheduler::getInstance();
         $this->futureTickQueue = new FutureTickQueue();
+        $this->deferTickQueue = new DeferTickQueue();
         $this->timers = new Timers();
         $this->pcntl = \extension_loaded('pcntl');
         $this->pcntlActive  = $this->pcntl && !\function_exists('pcntl_async_signals');
@@ -145,6 +147,11 @@ final class StreamSelectLoop implements ExtendedEventLoopInterface
 
         return $timer;
     }
+    
+    public function defer(callable $callable): void
+    {
+        $this->deferTickQueue->add($callable);
+    }
 
     public function cancelTimer(TimerInterface $timer)
     {
@@ -189,11 +196,15 @@ final class StreamSelectLoop implements ExtendedEventLoopInterface
 
         while ($this->running) {
             $this->futureTickQueue->tick();
-
+            $this->deferTickQueue->tick();
             $this->timers->tick();
+            $this->coroutineScheduler->tick();
 
             // Future-tick queue has pending callbacks ...
-            if (!$this->running || !$this->futureTickQueue->isEmpty()) {
+            if (!$this->running 
+                || !$this->futureTickQueue->isEmpty() 
+                || !$this->deferTickQueue->isEmpty()
+                || !$this->coroutineScheduler->isEmpty()) {
                 $timeout = 0;
 
             // There is a pending timer, only block until it is due ...
@@ -212,7 +223,6 @@ final class StreamSelectLoop implements ExtendedEventLoopInterface
             // The only possible event is stream or signal activity, so wait forever ...
             } elseif ($this->readStreams || $this->writeStreams || !$this->signals->isEmpty()) {
                 $timeout = null;
-
             // There's nothing left to do ...
             } else {
                 break;
