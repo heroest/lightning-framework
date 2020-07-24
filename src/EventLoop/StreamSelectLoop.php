@@ -1,15 +1,14 @@
 <?php
 
-namespace Sue\EventLoop;
+namespace Lightning\EventLoop;
 
-use React\Promise\PromiseInterface;
 use React\EventLoop\Timer\Timer;
 use React\EventLoop\{SignalsHandler, TimerInterface};
 use React\EventLoop\Tick\FutureTickQueue;
-use Sue\EventLoop\ExtendEventLoopInterface;
-use Sue\EventLoop\Timer\Timers;
-use Sue\EventLoop\Tick\DeferTickQueue;
-use Sue\Coroutine\CoroutineScheduler;
+use Lightning\EventLoop\ExtendEventLoopInterface;
+use Lightning\EventLoop\Timer\Timers;
+use Lightning\EventLoop\Tick\DeferTickQueue;
+use Lightning\Coroutine\CoroutineScheduler;
 
 /**
  * {{This is alternative version of \React\StreamSelectLoop}}

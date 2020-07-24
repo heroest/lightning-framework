@@ -56,7 +56,7 @@ function arrayCount($mixed): int
 function msDate($format = 'Y-m-d H:i:s.u'): string
 {
     list($sec, $usec) = explode('.', microtime(true));
-    $usec = (strlen($usec) < 3) ? str_pad($usec, 3, '0', STR_PAD_RIGHT) : substr($usec, 0, 3);
+    $usec = (strlen($usec) < 4) ? str_pad($usec, 4, '0', STR_PAD_RIGHT) : substr($usec, 0, 4);
     $format = str_replace('u', $usec, $format);
     return date($format, $sec);
 }
@@ -83,11 +83,11 @@ function container(): \Lightning\System\Container
 }
 
 /**
- * container: get loop
+ * get eventloop instance
  *
- * @return \Lightning\Base\ExtendedEventLoopInterface
+ * @return \Lightning\EventLoop\ExtendEventLoopInterface
  */
-function loop(): \Lightning\Base\ExtendedEventLoopInterface
+function loop(): \Lightning\EventLoop\ExtendEventLoopInterface
 {
     static $loop = null;
     if (null === $loop) {
@@ -155,4 +155,31 @@ function config(): \Lightning\System\Config
 function uxPath(string $path): string
 {
     return strtr($path, '\\', '/');
+}
+
+/**
+ * try to create a coroutine to run
+ *
+ * @param callable $callable
+ * @param array $params
+ * @return \Lightning\Coroutine\Coroutine|null
+ */
+function co(callable $callable, $params = []): ?\Lightning\Coroutine\Coroutine
+{
+    /** @var \Lightning\Coroutine\CoroutineSchdule $scheduler */
+    $scheduler = \Lightning\Coroutine\CoroutineScheduler::getInstance();
+    return $scheduler->execute($callable, $params);
+}
+
+/**
+ * Undocumented function
+ *
+ * @param \Lightning\Coroutine\Coroutine $coroutine
+ * @return void
+ */
+function stopCo(\Lightning\Coroutine\Coroutine $coroutine)
+{
+    /** @var \Lightning\Coroutine\CoroutineSchdule $scheduler */
+    $scheduler = \Lightning\Coroutine\CoroutineScheduler::getInstance();
+    $scheduler->cancelCoroutine($coroutine);
 }

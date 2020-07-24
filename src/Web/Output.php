@@ -8,68 +8,92 @@ use InvalidArgumentException;
 
 class Output
 {
-    const TYPE_TEXT = 'text';
-    const TYPE_HTML = 'html';
-    const TYPE_JSON = 'json';
+    const FORMAT_TEXT = 'text';
+    const FORMAT_HTML = 'html';
+    const FORMAT_JSON = 'json';
 
     private $code = 200;
     private $data;
     private $headers = [];
 
+    private $format = self::FORMAT_TEXT;
     private $deferred;
     private $sent = false;
 
     public function __construct()
     {
-        $this->deferred = new Deferred();
+        $this->deferred = new Deferred(function () {
+            $this->sent = true;
+        });
     }
 
-    public function setData(string $type, $mixed)
+    /**
+     * set response content
+     *
+     * @param mixed $mixed
+     * @return self
+     */
+    public function setContent($mixed): self
     {
-        $content_type = '';
-        switch ($type) {
-            case self::TYPE_TEXT:
+        switch ($this->format) {
+            case self::FORMAT_TEXT:
                 if (!is_string($mixed)) {
                     throw new InvalidArgumentException("2nd parameter expected to be a string when content-type is set to text");
                 }
-                $content_type = 'text/plain';
                 $this->data = $mixed;
                 break;
 
-            case self::TYPE_HTML:
+            case self::FORMAT_HTML:
                 if (!is_string($mixed)) {
                     throw new InvalidArgumentException("2nd parameter expected to be a string when content-type is set to html");
                 }
-                $content_type = 'text/html';
                 $this->data = $mixed;
                 break;
 
-            case self::TYPE_JSON:
-                $content_type = 'application/json';
+            case self::FORMAT_JSON:
                 $this->data = is_string($mixed) ? $mixed : json_encode($mixed, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
                 break;
+        }
+        return $this;
+    }
 
-            default:
-                throw new InvalidArgumentException("Unknown response content type: {$type}");
+    /**
+     * set repsonse content format
+     *
+     * @param string $format
+     * @return self
+     */
+    public function setFormat(string $format): self
+    {
+        $content_type = '';
+        switch ($format) {
+            case self::FORMAT_TEXT: $content_type = 'text/plain'; $this->format = $format; break;
+            case self::FORMAT_HTML: $content_type = 'text/html'; $this->format = $format; break;
+            case self::FORMAT_JSON: $content_type = 'application/json'; $this->format = $format; break;
+            default: throw new InvalidArgumentException("Unknown response format: {$format}");
         }
         $this->headers['Content-Type'] = "{$content_type};charset=UTF-8";
+        return $this;
     }
 
-    public function setHeader(string $key, string $value)
+    public function setHeader(string $key, string $value): self
     {
         $this->headers[$key] = $value;
+        return $this;
     }
 
-    public function setMultipleHeader(array $headers)
+    public function setMultipleHeader(array $headers): self
     {
         foreach ($headers as $key => $value) {
             $this->setHeader($key, $value);
         }
+        return $this;
     }
 
-    public function setStatusCode(int $code)
+    public function setStatusCode(int $code): self
     {
         $this->code = $code;
+        return $this;
     }
 
     public function send()
@@ -87,7 +111,7 @@ class Output
         return $this->deferred->promise();
     }
 
-    private function normalizeHeaders(array $headers)
+    private static function normalizeHeaders(array $headers)
     {
         $result = [];
         foreach ($headers as $key => $value) {

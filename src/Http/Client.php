@@ -8,7 +8,7 @@ use React\HttpClient\{
 };
 use React\Promise\{Deferred, PromiseInterface};
 use React\Socket\Connector;
-use Sue\Http\{HttpException, Result};
+use Lightning\Http\{HttpException, Result, Payload};
 use function Lightning\loop;
 use function React\Promise\Timer\timeout;
 
@@ -22,8 +22,7 @@ class Client
     private function __construct()
     {
         self::$loop = loop();
-        $connector = new Connector(self::$loop);
-        self::$baseClient = new BaseClient(self::$loop, $connector);
+        self::$baseClient = new BaseClient(self::$loop, new Connector(self::$loop));
     }
 
     public static function getInstance(): self
@@ -40,10 +39,10 @@ class Client
      * @param string $url
      * @param array $params
      * @param array $headers
-     * @param float $timeout
+     * @param array $options
      * @return PromiseInterface
      */
-    public function get(string $url, array $params = [], array $headers = [], float $timeout = 15): PromiseInterface
+    public function get(string $url, array $params = [], array $headers = [], array $options = []): PromiseInterface
     {
         $parts = self::parseUrl($url);
         $url = $parts['url'];
@@ -51,8 +50,14 @@ class Client
         if (!empty($params)) {
             $url .= '?' . http_build_query($params);
         }
+        
+        $payload = new Payload();
+        $payload->url = $url;
+        $payload->method = 'GET';
+        $payload->headers = $headers;
+        $payload->setOptions($options);
 
-        return $this->doRequest('GET', $url, $headers, $timeout);
+        return $this->doRequest($payload);
     }
 
     /**
@@ -61,10 +66,10 @@ class Client
      * @param string $url
      * @param array $post_data
      * @param array $headers
-     * @param float $timeout
+     * @param array $options
      * @return PromiseInterface
      */
-    public function post(string $url, array $post_data = [], array $headers = [], float $timeout = 15): PromiseInterface
+    public function post(string $url, array $post_data = [], array $headers = [], array $options = []): PromiseInterface
     {
         $post_field = http_build_query($post_data);
         $headers = array_merge([
@@ -72,7 +77,14 @@ class Client
             'Content-Length' => strlen($post_field)
         ], $headers);
 
-        return $this->doRequest('POST', $url, $headers, $timeout, $post_field);
+        $payload = new Payload();
+        $payload->url = $url;
+        $payload->method = 'POST';
+        $payload->headers = $headers;
+        $payload->postField = $post_field;
+        $payload->setOptions($options);
+
+        return $this->doRequest($payload);
     }
 
     /**
@@ -81,50 +93,74 @@ class Client
      * @param string $url
      * @param array $post_data
      * @param array $headers
-     * @param float $timeout
+     * @param array $options
      * @return PromiseInterface
      */
-    public function jsonPost(string $url, array $post_data = [], array $headers = [], float $timeout = 15): PromiseInterface
+    public function jsonPost(string $url, array $post_data = [], array $headers = [], array $options = []): PromiseInterface
     {
         $post_field = json_encode($post_data, JSON_UNESCAPED_UNICODE);
         $headers = array_merge([
             'Content-Type' => 'application/json',
             'Content-Length' => strlen($post_field)
         ], $headers);
+        
+        $payload = new Payload();
+        $payload->url = $url;
+        $payload->method = 'POST';
+        $payload->headers = $headers;
+        $payload->postField = $post_field;
+        $payload->setOptions($options);
 
-        return $this->doRequest('POST', $url, $headers, $timeout, $post_field);
+        return $this->doRequest($payload);
     }
 
-    private function doRequest(string $method, string $url, array $headers, float $timeout, ?string $post_field = null): PromiseInterface
+    private function doRequest(Payload $payload): PromiseInterface
     {
         /** @var Request $request */
         $request = null;
         $deferred = new Deferred(function () use (&$request) {
             $request->close();
-            throw new HttpException("请求超时");
+            throw new HttpException("request is closed due-to promise-cancelling");
         });
 
+        $options = $payload->getOptions();
         $promise = $deferred->promise();
-        $request = self::$baseClient->request($method, $url, $headers);
+        $request = self::$baseClient->request(
+                        $payload->method, 
+                        $payload->url, 
+                        $payload->headers
+                    );
 
         $promise->then(function () use (&$request) {
             $request->close();
         });
 
         $result = new Result();
-        $request->on('response', function (BaseResponse $response) use ($deferred, $result, $promise) {
+        $request->on('response', function (BaseResponse $response) use ($deferred, $result, $promise, $payload) {
             $promise->then(function () use ($response) {
                 $response->close();
             });
-            self::handleResponse($response, $result, $deferred);
+
+            //check locatioin header
+            $headers = $response->getHeaders();
+            $options = $payload->getOptions();
+            if (!empty($location = $headers['location']) and true === $options['follow_redirects']) {
+                $response->close();
+                $payload->url = $location;
+                $deferred->resolve($this->doRequest($payload));
+                return;
+            } else {
+                self::handleResponse($response, $result, $deferred);
+                return;
+            }
         });
 
         $request->on('error', function ($error) use ($deferred) {
             $deferred->reject($error);
         });
-        $request->end($post_field);
+        $request->end($payload->postField);
         $result->timer('request');
-        return timeout($promise, $timeout, self::$loop);
+        return timeout($promise, $options['timeout'], self::$loop);
     }
 
     private static function handleResponse(BaseResponse $response, Result $result, Deferred $deferred)

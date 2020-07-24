@@ -2,13 +2,12 @@
 
 namespace Lightning\Database;
 
-use SplObjectStorage;
-use Generator;
+use Symfony\Component\OptionsResolver\OptionsResolver;
 use React\Promise\{Deferred, PromiseInterface};
 use Lightning\Database\{DatabaseException, Connection, Transaction};
 use Lightning\Base\AbstractSingleton;
 use function React\Promise\{resolve, reject};
-use function Lightning\{clearTimer, setTimeout, setInterval, objectId};
+use function Lightning\{setInterval, getObjectId};
 
 class ConnectionPool extends AbstractSingleton
 {
@@ -26,7 +25,7 @@ class ConnectionPool extends AbstractSingleton
      *
      * @var integer
      */
-    private $maxNumPendingConnections = 200;
+    private $maxNumPendingQuery = 200;
 
     /**
      * 预处理连接流量阻塞锁
@@ -44,6 +43,7 @@ class ConnectionPool extends AbstractSingleton
     
     public function bootstrap(array $config)
     {
+        $config = $this->resolveOptions($config);
         foreach ($config['connections'] as $name => $option) {
             $this->initializeConnections($name, $option);
         }
@@ -58,7 +58,7 @@ class ConnectionPool extends AbstractSingleton
      */
     public function getPendingConnectionThresholdLock(): PromiseInterface
     {
-        if ($this->pendingConnectionListCount < $this->maxNumPendingConnections) {
+        if ($this->pendingConnectionListCount < $this->maxNumPendingQuery) {
             return resolve(true);
         } else {
             $deferred = new Deferred(null);
@@ -99,7 +99,7 @@ class ConnectionPool extends AbstractSingleton
             $this->pendingConnectionList[$key][] = $deferred;
         } else {
             $deferred = null;
-            $transaction_id = objectId($transaction);
+            $transaction_id = getObjectId($transaction);
             $canceller = function () use ($transaction_id, &$deferred) {
                 foreach ($this->transactionPendingConnectionList[$transaction_id] as $index => $pending) {
                     if ($pending === $deferred) {
@@ -209,7 +209,7 @@ class ConnectionPool extends AbstractSingleton
             return;
         }
 
-        if ($this->pendingConnectionListCount < $this->maxNumPendingConnections) {
+        if ($this->pendingConnectionListCount < $this->maxNumPendingQuery) {
             $first_lock = array_shift($this->pendingConnectionThresholdLocks);
             $first_lock->resolve(true);
         }
@@ -304,5 +304,16 @@ class ConnectionPool extends AbstractSingleton
     {
         shuffle($list);
         return $list;
+    }
+
+    private function resolveOptions(array $options)
+    {
+        $resolver = new OptionsResolver();
+        $resolver->setDefaults([
+            'max_num_pending_query' => 200
+        ]);
+        $resolver->setAllowedTypes('connections', 'array');
+        $resolver->setAllowedValues('max_num_pending_query', ['int']);
+        return $resolver->resolve($options);
     }
 }

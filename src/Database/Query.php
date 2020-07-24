@@ -2,8 +2,9 @@
 
 namespace Lightning\Database;
 
-use Lightning\Database\{QueryManager, Transaction};
+use Lightning\Database\{Transaction};
 use React\Promise\PromiseInterface;
+use function Lightning\container;
 
 class Query
 {
@@ -39,7 +40,7 @@ class Query
 
     private function __construct(string $connection_name = '', string $connection_role, Transaction $transaction = null)
     {
-        $this->qm = QueryManager::getInstance();
+        $this->qm = container()->get('query-manager');
         if (null !== $transaction) {
             $this->transaction = $transaction;
             $this->connectionName = $transaction->getConnectionName();

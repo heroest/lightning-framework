@@ -7,23 +7,24 @@ use SplObjectStorage;
 use SplStack;
 use Generator;
 use React\Promise\PromiseInterface;
-use common\lib\AbstractSingleton;
+use Lightning\Base\AbstractSingleton;
 use Lightning\Coroutine\SystemCall\AbstractSystemCall;
 use Lightning\Coroutine\{Coroutine, CoroutineException};
-use function Lightning\{loop, setInterval};
+use Symfony\Component\OptionsResolver\OptionsResolver;
+use function Lightning\{config, setInterval};
 
 class CoroutineScheduler extends AbstractSingleton
 {
-    const MAX_COROUTINE_IDLE_TIME = 30;
-    const MAX_COROUTINE_POOL_SIZE = 16;
-
     private $coroutineStack;
     private $coroutineWorking;
+    private $maxCoroutineTimeIdle = 30;
+    private $maxCoroutinePoolSize = 16;
 
     protected function __construct()
     {
         $this->coroutineStack = new SplStack();
         $this->coroutineWorking = new SplObjectStorage();
+        $this->loadConfig();
     }
 
     public function execute(callable $callback, array $params = []): ?Coroutine
@@ -155,7 +156,7 @@ class CoroutineScheduler extends AbstractSingleton
 
     private function createCoroutine(): Coroutine
     {
-        return $this->coroutineStack->valid()
+        return ($this->coroutineStack->count() > 0)
                 ? $this->coroutineStack->pop()
                 : new Coroutine();
     }
@@ -188,12 +189,12 @@ class CoroutineScheduler extends AbstractSingleton
             while ($removed) {
                 $removed = false;
                 $count = $this->coroutineStack->count();
-                if ($count <= self::MAX_COROUTINE_POOL_SIZE) {
+                if ($count <= $this->maxCoroutinePoolSize) {
                     return;
                 } else {
                     /** @var Coroutine $coroutine */
                     $coroutine = $this->coroutineStack->bottom();
-                    if ($coroutine->inState(Coroutine::STATE_IDLE) and $coroutine->getStateDuration() > self::MAX_COROUTINE_IDLE_TIME) {
+                    if ($coroutine->inState(Coroutine::STATE_IDLE) and $coroutine->getStateDuration() > $this->maxCoroutineTimeIdle) {
                         $this->coroutineStack->shift();
                         $removed = true;
                     }
@@ -201,6 +202,20 @@ class CoroutineScheduler extends AbstractSingleton
             }
         };
         setInterval($callable, 30);
-        
+    }
+
+    private function loadConfig()
+    {
+        $resolver = new OptionsResolver();
+        $resolver->setDefaults([
+            'max_time_idle' => 30,
+            'max_pool_size' => 16
+        ])
+        ->setAllowedTypes('max_time_idle', ['float', 'int'])
+        ->setAllowedTypes('max_pool_size', ['int']);
+
+        $options = $resolver->resolve(config()->get('coroutine'));
+        $this->maxCoroutinePoolSize = $options['max_pool_size'];
+        $this->maxCoroutineTimeIdle = $options['max_time_idle'];
     }
 }

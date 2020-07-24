@@ -3,7 +3,7 @@ namespace Lightning\EventLoop;
 
 class LoopFactory
 {
-    public static function buildLoop(): \Lightning\Base\ExtendedEventLoopInterface
+    public static function buildLoop(): \Lightning\EventLoop\ExtendEventLoopInterface
     {
         return new \Lightning\EventLoop\StreamSelectLoop();
     }

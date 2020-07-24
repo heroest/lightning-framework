@@ -6,7 +6,6 @@ use Lightning\Coroutine\CoroutineException;
 use Generator;
 use Throwable;
 use React\Promise\{Deferred, PromiseInterface};
-use function Lightning\{clearTimer, setTimeout, loop};
 
 class Coroutine
 {

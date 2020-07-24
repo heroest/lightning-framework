@@ -26,16 +26,20 @@ abstract class Application
     {
         $container = \Lightning\container();
         $container->set('app', $this, true);
+        $container->set('config', \Lightning\System\Config::class, true);
+        $container->set('http-client', function () {
+            return \Lightning\Http\Client::getInstance();
+        }, true);
         
-        $container->set('config', function() {
-            $config = new \Lightning\System\Config();
-            return $config;
+        //db-config
+        $container->set('query-manager', function () {
+            $config = \Lightning\config()->get('database');
+            $connection_pool = new \Lightning\Database\ConnectionPool($config);
+            /** @var \Lightning\Database\QUeryManager $manager */
+            $manager = \Lightning\Database\QueryManager::getInstance();
+            $manager->setConnectionPool($connection_pool);
+            return $manager;
         }, true);
-        $container->set('dbm', function() {
-            $pool = new \Lightning\Database\Pool();
-            return new \Lightning\Database\DBManager($pool);
-        }, true);
-        $container->set('http-client', \Lightning\Http\HttpClient::class);
     }
 
     abstract public function run();
