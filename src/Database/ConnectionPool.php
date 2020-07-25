@@ -18,14 +18,14 @@ class ConnectionPool extends AbstractSingleton
 
     private $pendingConnectionList = [];
     private $transactionPendingConnectionList = [];
-    private $pendingConnectionListCount = 0;
+    private $pendingConnectionCount = 0;
 
     /**
      * 预处理连接上限
      *
      * @var integer
      */
-    private $maxNumPendingQuery = 200;
+    private $maxPendingConnectionCount = 200;
 
     /**
      * 预处理连接流量阻塞锁
@@ -44,11 +44,12 @@ class ConnectionPool extends AbstractSingleton
     public function bootstrap(array $config)
     {
         $config = $this->resolveOptions($config);
+        $this->maxPendingConnectionCount = $config['max_pending_connection_count'];
         foreach ($config['connections'] as $name => $option) {
             $this->initializeConnections($name, $option);
         }
-        $this->registerPendingConnectionListResolver();
-        $this->registerConnectionMonitor();
+        $this->registerTimerPendingConnectionResolver();
+        $this->registerTimerConnectionMonitor();
     }
 
     /**
@@ -58,7 +59,7 @@ class ConnectionPool extends AbstractSingleton
      */
     public function getPendingConnectionThresholdLock(): PromiseInterface
     {
-        if ($this->pendingConnectionListCount < $this->maxNumPendingQuery) {
+        if ($this->pendingConnectionCount < $this->maxPendingConnectionCount) {
             return resolve(true);
         } else {
             $deferred = new Deferred(null);
@@ -68,7 +69,7 @@ class ConnectionPool extends AbstractSingleton
     }
 
     /**
-     * 获取数据库连接
+     * 获取数据连接或者待链接
      *
      * @param string $name
      * @param string $role
@@ -77,9 +78,7 @@ class ConnectionPool extends AbstractSingleton
      */
     public function getConnection(string $name, string $role, Transaction $transaction = null): PromiseInterface
     {
-        if (null !== $transaction and $transaction->isClosed()) {
-            reject(new DatabaseException("transaction is closed already"));
-        } elseif (null !== $connection = $this->doGetConnection($name, $role, $transaction)) {
+        if (null !== $connection = $this->doGetConnection($name, $role, $transaction)) {
             return resolve($connection);
         }
 
@@ -111,11 +110,16 @@ class ConnectionPool extends AbstractSingleton
             $deferred = new Deferred($canceller);
             $this->transactionPendingConnectionList[$transaction_id][] = ['deferred' => $deferred, 'transaction' => $transaction];
         }
-        $this->pendingConnectionListCount++;
+        $this->pendingConnectionCount++;
         return $deferred->promise();        
     }
 
-    private function registerConnectionMonitor()
+    /**
+     * 注册数据连接管理timer(per 30sec)
+     *
+     * @return void
+     */
+    private function registerTimerConnectionMonitor()
     {
         $callback = function () {
             foreach (['master', 'slave'] as $role) {
@@ -149,14 +153,14 @@ class ConnectionPool extends AbstractSingleton
     }
 
     /**
-     * 注册待连接请求的处理者
+     * 注册待连接请求的处理者timer(every sec)
      *
      * @return void
      */
-    private function registerPendingConnectionListResolver()
+    private function registerTimerPendingConnectionResolver()
     {
         $callable = function () {
-            if (0 === $this->pendingConnectionListCount) {
+            if (0 === $this->pendingConnectionCount) {
                 $this->removePendingConnectionThresholdLock();
                 return;
             }
@@ -168,7 +172,7 @@ class ConnectionPool extends AbstractSingleton
                         break; //说明resolve不了， 直接break处理下一个connectionName,role的连接
                     }
                     unset($this->pendingConnectionList[$key][$index]);
-                    $this->pendingConnectionListCount--;
+                    $this->pendingConnectionCount--;
                     $pending->resolve($connection);
                 }
             }
@@ -179,17 +183,12 @@ class ConnectionPool extends AbstractSingleton
                     $transaction = $pending['transaction'];
                     $deferred = $pending['deferred'];
                     $name = $transaction->getConnectionName();
-                    if ($transaction->isClosed()) {
-                        unset($this->transactionPendingConnectionList[$transaction_id][$index]);
-                        $this->pendingConnectionListCount--;
-                        $deferred->reject(new DatabaseException("transaction is closed already"));
-                    } elseif (null === $connection = $this->doGetConnection($name, 'master', $transaction)) {
+                    if (null === $connection = $this->doGetConnection($name, 'master', $transaction)) {
                         break;
-                    } else {
-                        unset($this->transactionPendingConnectionList[$transaction_id][$index]);
-                        $this->pendingConnectionListCount--;
-                        $deferred->resolve($connection);
                     }
+                    unset($this->transactionPendingConnectionList[$transaction_id][$index]);
+                    $this->pendingConnectionCount--;
+                    $deferred->resolve($connection);
                 }
             }
 
@@ -199,7 +198,7 @@ class ConnectionPool extends AbstractSingleton
     }
     
     /**
-     * 释放待链接阻塞锁
+     * 释放一个待链接限流阀
      *
      * @return void
      */
@@ -209,7 +208,7 @@ class ConnectionPool extends AbstractSingleton
             return;
         }
 
-        if ($this->pendingConnectionListCount < $this->maxNumPendingQuery) {
+        if ($this->pendingConnectionCount < $this->maxPendingConnectionCount) {
             $first_lock = array_shift($this->pendingConnectionThresholdLocks);
             $first_lock->resolve(true);
         }
@@ -225,6 +224,15 @@ class ConnectionPool extends AbstractSingleton
      */
     private function doGetConnection(string $name, string $role, Transaction $transaction = null): ?Connection
     {
+        //如果是事务型，直接检查绑定的connection资源有无释放
+        if (null !== $transaction) {
+            $connection = $transaction->getConnection();
+            return ($connection->getTransaction() === $transaction and $connection->inState(Connection::STATE_IDLE)) 
+                    ? $connection
+                    : null;
+        }
+
+        //其他类型的话需要尝试获取可用的connection资源
         $role = $this->fallbackToMaster($name, $role);
         foreach ([$role, "{$role}Backup"] as $group) {
             /** @var Connection $connection */
@@ -236,15 +244,7 @@ class ConnectionPool extends AbstractSingleton
                     $candicate = $connection;
                 }
 
-                if (null === $candicate) {
-                    continue;
-                } elseif (null !== $transaction) {
-                    if ($candicate->inTransaction() and $transaction === $candicate->getTransaction()) {
-                        return $candicate;
-                    } else {
-                        continue;
-                    }
-                } elseif (false === $candicate->inTransaction()) {
+                if (null !== $candicate and false === $candicate->inTransaction()) {
                     return $candicate;
                 }
             }
@@ -310,10 +310,10 @@ class ConnectionPool extends AbstractSingleton
     {
         $resolver = new OptionsResolver();
         $resolver->setDefaults([
-            'max_num_pending_query' => 200
+            'max_pending_connection_count' => 200
         ]);
         $resolver->setAllowedTypes('connections', 'array');
-        $resolver->setAllowedValues('max_num_pending_query', ['int']);
+        $resolver->setAllowedValues('max_pending_connection_count', ['int']);
         return $resolver->resolve($options);
     }
 }

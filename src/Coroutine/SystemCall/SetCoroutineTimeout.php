@@ -2,10 +2,10 @@
 
 namespace Lightning\Coroutine\SystemCall;
 
-use Lightning\Coroutine\SystemCall\AbstractSystemCall;
+use Lightning\Coroutine\SystemCall\InterfaceSystemCall;
 use Lightning\Coroutine\Coroutine;
 
-class SetCoroutineTimeout extends AbstractSystemCall
+class SetCoroutineTimeout implements InterfaceSystemCall
 {
     private $timeout;
 

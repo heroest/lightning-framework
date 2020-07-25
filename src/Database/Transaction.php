@@ -2,6 +2,7 @@
 
 namespace Lightning\Database;
 
+use SplObjectStorage;
 use React\Promise\{Deferred, PromiseInterface};
 use Lightning\Database\{Query, DatabaseException, Connection};
 class Transaction
@@ -11,14 +12,16 @@ class Transaction
     private $settled = false;
     private $timeout = 0;
     private $connection;
+    private $pendingConnected = null;
     const STATEMENT_START = 'START TRANSACTION;';
     const STATEMENT_ROLLBACK = 'ROLLBACK;';
-    const STATEMENT_COMMIT = 'COMMITa;';
+    const STATEMENT_COMMIT = 'COMMIT;';
 
     private function __construct(string $connection_name, float $timeout)
     {
         $this->connectionName = $connection_name;
         $this->timeout = $timeout;
+        $this->pendingConnected = new SplObjectStorage();
     }
 
     public function getConnectionName()
@@ -36,6 +39,16 @@ class Transaction
         return $this->connection;
     }
 
+    public function attachConnected(PromiseInterface $connected)
+    {
+        $this->pendingConnected->attach($connected);
+    }
+
+    public function detachConnected(PromiseInterface $connected)
+    {
+        $this->pendingConnected->detach($connected);
+    }
+
     /**
      * 关闭数据库事务
      *
@@ -45,6 +58,9 @@ class Transaction
     public function close(float $timeout = 30)
     {
         $this->closed = true;
+        foreach ($this->pendingConnected as $connected) {
+            $connected->cancel();
+        }
         /** @var QueryManager $manager */
         $manager = QueryManager::getInstance();
         if ($this->settled) {
@@ -102,7 +118,7 @@ class Transaction
                     ->execute();
                 $deferred->resolve($promise);
             }, 
-            function ($error) use ($deferred, $connected) {
+            function ($error) use ($deferred) {
                 $deferred->reject($error);
             }
         );

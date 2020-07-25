@@ -8,7 +8,7 @@ use SplStack;
 use Generator;
 use React\Promise\PromiseInterface;
 use Lightning\Base\AbstractSingleton;
-use Lightning\Coroutine\SystemCall\AbstractSystemCall;
+use Lightning\Coroutine\SystemCall\InterfaceSystemCall;
 use Lightning\Coroutine\{Coroutine, CoroutineException};
 use Symfony\Component\OptionsResolver\OptionsResolver;
 use function Lightning\{config, setInterval};
@@ -98,7 +98,7 @@ class CoroutineScheduler extends AbstractSingleton
                 $this->handlePromise($coroutine, $yielded);
             } elseif ($yielded instanceof Generator) {
                 $this->handleGenerator($coroutine, $yielded);
-            } elseif ($yielded instanceof AbstractSystemCall) {
+            } elseif ($yielded instanceof InterfaceSystemCall) {
                 $this->handleYielded($coroutine, $yielded->execute($coroutine));
             } else {
                 $this->coroutineTick($coroutine, $yielded);
@@ -150,7 +150,7 @@ class CoroutineScheduler extends AbstractSingleton
         $this->coroutineWorking->attach($child);
         
         $parent->setChild($child)
-            ->appendProgress($child->promise()); //parent hold until child done
+            ->appendProgress($child->promise()); //父协程挂起直到子协程fullfilled
         
     }
 

@@ -3,7 +3,7 @@ namespace Lightning\Base;
 
 abstract class AbstractSingleton
 {
-    private static $_instanceStorage = [];
+    private static $objectStorage = [];
 
     abstract protected function __construct();
 
@@ -14,10 +14,10 @@ abstract class AbstractSingleton
      */
     final public static function getInstance()
     {
-        $called_class = get_called_class();
-        if (!isset(self::$_instanceStorage[$called_class])) {
-            self::$_instanceStorage[$called_class] = new $called_class();
+        $class_name = get_called_class();
+        if (!isset(self::$objectStorage[$class_name])) {
+            self::$objectStorage[$class_name] = new $class_name();
         }
-        return self::$_instanceStorage[$called_class];
+        return self::$objectStorage[$class_name];
     }
 }

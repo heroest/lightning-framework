@@ -3,7 +3,6 @@
 namespace Lightning\EventLoop\Tick;
 
 use SplQueue;
-use React\Promise\{PromiseInterface, Deferred};
 use function Lightning\co;
 
 final class DeferTickQueue

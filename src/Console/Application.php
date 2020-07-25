@@ -26,9 +26,9 @@ class Application extends BaseApplication
             if ($result === null) {
                 return;
             } elseif ($result instanceof PromiseInterface) {
-                $stopper = function () {
+                $stopper = (function () {
                     loop()->stop();
-                };
+                })->bindTo(null);
                 $result->then($stopper, $stopper);
             } else {
                 loop()->stop();

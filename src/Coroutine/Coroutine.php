@@ -13,8 +13,6 @@ class Coroutine
     const STATE_WORKING = 'working';
     const STATE_PROGRESS = 'progress';
 
-    const MAX_COROUTINE_TIMEOUT = 45;
-
     /** @var int $count */
     private static $count = 1;  
     /** @var Generator $coroutine */
@@ -47,7 +45,7 @@ class Coroutine
         $this->changeState(self::STATE_IDLE);
     }
 
-    public function initialize(Generator $coroutine): self
+    public function initialize(Generator $coroutine, float $timeout = 30): self
     {
         $this->deferred = new Deferred(function () {
             $this->cancel('promise-cancelling');
@@ -56,7 +54,7 @@ class Coroutine
         $this->changeState(self::STATE_WORKING);
         $this->coroutine = $coroutine;
         $this->timeStartWorking = microtime(true);
-        $this->setCoroutineTimeout();
+        $this->setCoroutineTimeout($timeout);
         return $this;
     }
 
@@ -154,9 +152,10 @@ class Coroutine
         return floatval(bcsub(microtime(true), $this->timeDurationStart, 4));
     }
 
-    public function setCoroutineTimeout(float $timeout = self::MAX_COROUTINE_TIMEOUT): void
+    public function setCoroutineTimeout(float $timeout): self
     {
         $this->timeout = $timeout;
+        return $this;
     }
 
     public function isOverTime(): bool
@@ -166,7 +165,7 @@ class Coroutine
                 : floatval(bcsub(microtime(true), $this->timeStartWorking, 4)) > $this->timeout;
     }
 
-    public function cancel(string $reason = '')
+    public function cancel(string $reason = ''): self
     {   
         if (null !== $this->progress) {
             $this->progress->cancel();
@@ -177,6 +176,7 @@ class Coroutine
         $exception_msg .= $reason ? " due to {$reason}" : '';
         $this->settle(new CoroutineException($exception_msg));
         $this->coroutine = null;
+        return $this;
     }
 
     public function reset()
@@ -198,7 +198,6 @@ class Coroutine
     private function settle($value)
     {
         if ($value instanceof Throwable) {
-            echo $value;
             $this->deferred->reject($value);
         } else {
             $this->deferred->resolve($value);

@@ -62,7 +62,7 @@ class FileCollection
         return new ArrayIterator($this->storage);
     }
 
-    private function shouldIgnore(string $path, ?string $pattern): bool
+    private static function shouldIgnore(string $path, ?string $pattern): bool
     {
         if ($pattern === null) {
             return false;

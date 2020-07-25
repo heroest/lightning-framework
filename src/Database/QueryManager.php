@@ -105,12 +105,25 @@ class QueryManager extends AbstractSingleton
             throw new DatabaseException("Query execution is canncelled due to promise-cancelling");
         });
 
-        $connected = $this->pool->getConnection(
-                        $query->getConnectionName(),
-                        $query->getConnectionRole(),
-                        $query->getTransaction()
-                    );
-        $connected->then(function (Connection $connection) use ($query, $deferred, &$link) {
+        if (null === $transaction = $query->getTransaction()) {
+            $connected = $this->pool->getConnection(
+                $query->getConnectionName(),
+                $query->getConnectionRole(),
+                null
+            );
+        } else {
+            $connected = $this->pool->getConnection(
+                $query->getConnectionName(),
+                $query->getConnectionRole(),
+                $transaction
+            );
+            $transaction->attachConnected($connected);
+        }
+        
+        $connected->then(function (Connection $connection) use ($connected, $query, $deferred, &$link) {
+                if (null !== $transaction = $query->getTransaction()) {
+                    $transaction->detachConnected($connected);
+                }
                 $link = $connection->getLink();
                 $this->working->attach($link, $connection);
 

@@ -2,10 +2,10 @@
 
 namespace Lightning\Coroutine\SystemCall;
 
-use Lightning\Coroutine\SystemCall\AbstractSystemCall;
+use Lightning\Coroutine\SystemCall\InterfaceSystemCall;
 use Lightning\Coroutine\Coroutine;
 
-class GetCoroutineId extends AbstractSystemCall
+class GetCoroutineId implements InterfaceSystemCall
 {
     public function execute(Coroutine $coroutine)
     {

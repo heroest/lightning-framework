@@ -2,10 +2,10 @@
 
 namespace Lightning\Coroutine\SystemCall;
 
-use Lightning\Coroutine\SystemCall\AbstractSystemCall;
+use Lightning\Coroutine\SystemCall\InterfaceSystemCall;
 use Lightning\Coroutine\{Coroutine, CoroutineScheduler};
 
-class CancelCoroutine extends AbstractSystemCall
+class CancelCoroutine implements InterfaceSystemCall
 {
     public function execute(Coroutine $coroutine)
     {

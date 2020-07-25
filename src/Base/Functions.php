@@ -158,7 +158,7 @@ function uxPath(string $path): string
 }
 
 /**
- * try to create a coroutine to run
+ * 创建协程容器，成功返回协程实例，失败返回null
  *
  * @param callable $callable
  * @param array $params
@@ -172,7 +172,7 @@ function co(callable $callable, $params = []): ?\Lightning\Coroutine\Coroutine
 }
 
 /**
- * Undocumented function
+ * 关闭协程容器
  *
  * @param \Lightning\Coroutine\Coroutine $coroutine
  * @return void
