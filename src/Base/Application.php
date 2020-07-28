@@ -70,15 +70,16 @@ abstract class Application
     protected static function normalize(string $str): string
     {
         $result = [];
-        $dividers = ['-', '\\'];
         $next_upper = false;
         foreach (str_split($str) as $chr) {
             if ($next_upper == true) {
                 $chr = strtoupper($chr);
                 $next_upper = false;
-            } elseif (in_array($chr, $dividers)) {
+            } elseif ($chr === '-') {
                 $next_upper = true;
                 continue;
+            } elseif ($chr === '/') {
+                $next_upper = true;
             }
             $result[] = $chr;
         }
