@@ -17,7 +17,7 @@ class ConnectionPool extends AbstractSingleton
     private $slaveBackup = [];
 
     private $pendingConnectionList = [];
-    private $transactionPendingConnectionList = [];
+    private $pendingTransactionList = [];
     private $pendingConnectionCount = 0;
 
     /**
@@ -100,15 +100,15 @@ class ConnectionPool extends AbstractSingleton
             $deferred = null;
             $transaction_id = getObjectId($transaction);
             $canceller = function () use ($transaction_id, &$deferred) {
-                foreach ($this->transactionPendingConnectionList[$transaction_id] as $index => $pending) {
+                foreach ($this->pendingTransactionList[$transaction_id] as $index => $pending) {
                     if ($pending === $deferred) {
-                        unset($this->transactionPendingConnectionList[$transaction_id][$index]);
+                        unset($this->pendingTransactionList[$transaction_id][$index]);
                     }
                 }
                 throw new DatabaseException("pending-connection is cancelled due to promise-cancelling");
             };
             $deferred = new Deferred($canceller);
-            $this->transactionPendingConnectionList[$transaction_id][] = ['deferred' => $deferred, 'transaction' => $transaction];
+            $this->pendingTransactionList[$transaction_id][] = ['deferred' => $deferred, 'transaction' => $transaction];
         }
         $this->pendingConnectionCount++;
         return $deferred->promise();        
@@ -178,7 +178,7 @@ class ConnectionPool extends AbstractSingleton
             }
 
             //处理事务等待连接
-            foreach ($this->transactionPendingConnectionList as $transaction_id => $list) {
+            foreach ($this->pendingTransactionList as $transaction_id => $list) {
                 foreach ($list as $index => $pending) {
                     $transaction = $pending['transaction'];
                     $deferred = $pending['deferred'];
@@ -186,7 +186,7 @@ class ConnectionPool extends AbstractSingleton
                     if (null === $connection = $this->doGetConnection($name, 'master', $transaction)) {
                         break;
                     }
-                    unset($this->transactionPendingConnectionList[$transaction_id][$index]);
+                    unset($this->pendingTransactionList[$transaction_id][$index]);
                     $this->pendingConnectionCount--;
                     $deferred->resolve($connection);
                 }
