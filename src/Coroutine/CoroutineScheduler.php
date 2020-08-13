@@ -82,7 +82,7 @@ class CoroutineScheduler extends AbstractSingleton
 
     public function isEmpty()
     {
-        return false === $this->coroutineWorking->valid();
+        return 0 === $this->coroutineWorking->count();
     }
 
     public function getCount()
