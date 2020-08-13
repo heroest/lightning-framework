@@ -129,6 +129,7 @@ class CoroutineScheduler extends AbstractSingleton
                 $this->coroutineTick($parent, $e);
             } else { //if there's no parent, throw it now
                 //uncaught exception
+                throw $e;
             }
         }
     }

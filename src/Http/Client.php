@@ -142,11 +142,11 @@ class Client
             });
 
             //check locatioin header
-            $headers = $response->getHeaders();
+            $headers = array_change_key_case($response->getHeaders(), CASE_LOWER);
             $options = $payload->getOptions();
-            if (!empty($location = $headers['location']) and true === $options['follow_redirects']) {
+            if (!empty($headers['location']) and true === $options['follow_redirects']) {
                 $response->close();
-                $payload->url = $location;
+                $payload->url = $headers['location'];
                 $deferred->resolve($this->doRequest($payload));
                 return;
             } else {

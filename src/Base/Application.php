@@ -34,7 +34,8 @@ abstract class Application
         //db-config
         $container->set('query-manager', function () {
             $config = \Lightning\config()->get('database');
-            $connection_pool = new \Lightning\Database\ConnectionPool($config);
+            $connection_pool = \Lightning\Database\ConnectionPool::getInstance();
+            $connection_pool->bootstrap($config);
             /** @var \Lightning\Database\QUeryManager $manager */
             $manager = \Lightning\Database\QueryManager::getInstance();
             $manager->setConnectionPool($connection_pool);

@@ -44,7 +44,7 @@ class ConnectionPool extends AbstractSingleton
     public function bootstrap(array $config)
     {
         $config = $this->resolveOptions($config);
-        $this->maxPendingConnectionCount = $config['max_pending_connection_count'];
+        $this->maxPendingConnectionCount = $config['max_num_pending_query'];
         foreach ($config['connections'] as $name => $option) {
             $this->initializeConnections($name, $option);
         }
@@ -310,10 +310,10 @@ class ConnectionPool extends AbstractSingleton
     {
         $resolver = new OptionsResolver();
         $resolver->setDefaults([
-            'max_pending_connection_count' => 200
-        ]);
-        $resolver->setAllowedTypes('connections', 'array');
-        $resolver->setAllowedValues('max_pending_connection_count', ['int']);
+            'max_num_pending_query' => 200
+        ])
+        ->setRequired(['connections', 'max_num_pending_query'])
+        ->setAllowedTypes('max_num_pending_query', 'int');
         return $resolver->resolve($options);
     }
 }

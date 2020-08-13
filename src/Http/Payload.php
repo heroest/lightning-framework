@@ -39,7 +39,6 @@ class Payload
                 'follow_redirects' => true         
             ])
             ->setAllowedTypes('timeout', ['float', 'int'])
-            ->setAllowedTypes('connection_timeout', ['float', 'int'])
             ->setAllowedValues('follow_redirects', [true, false]);
             self::$optionResolver = $resolver;
         }
